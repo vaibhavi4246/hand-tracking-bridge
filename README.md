@@ -1,245 +1,221 @@
-# Hand Tracking Bridge for TouchDesigner
+# Hand Tracking Bridge
 
-A real-time hand tracking application that bridges MediaPipe with TouchDesigner using the OSC protocol. Tracks hand landmarks, calculates gesture metrics, and sends normalized values to TouchDesigner in real-time.
+A real-time hand gesture pipeline that bridges MediaPipe hand tracking with TouchDesigner, web browsers, and any OSC-compatible software.
+
+**V2** — refactored from a single-file script into a production-grade multi-threaded pipeline with a plugin output architecture, advanced gesture recognition, a live web dashboard, per-user calibration, and a full CI-backed test suite.
+
+---
 
 ## Features
 
-- **Real-time Hand Detection**: Detects up to 2 hands simultaneously using MediaPipe
-- **Gesture Calculations**:
-  - Pinch distance (thumb to index finger)
-  - Hand openness (average fingertip distance from wrist)
-  - Wrist position (normalized X, Y coordinates)
-  - Hand presence detection
-- **OSC Protocol**: Sends data to TouchDesigner via UDP on port 7000
-- **Smoothing**: Exponential Moving Average (EMA) smoothing with α=0.7 to reduce jitter
-- **Live Debug Visualization**: OpenCV window showing landmarks, gesture values, and FPS
-- **Performance**: Targets 30 FPS with frame rate control
+| Category | Capability |
+|----------|-----------|
+| **Detection** | Up to 2 hands @ 30 FPS via MediaPipe |
+| **Gestures** | Pinch, openness, per-finger flexion (0–1), palm orientation (roll/pitch/yaw), wrist velocity & acceleration |
+| **Classification** | Discrete gestures: `fist`, `open`, `peace`, `thumbs_up`, `pointing` with temporal hysteresis |
+| **Smoothing** | One Euro Filter (adaptive, low-latency) + EMA |
+| **Output** | OSC (TouchDesigner), WebSocket (browser), JSONL recording |
+| **Dashboard** | Live web UI at `localhost:8000` — skeleton canvas, gesture bars, FPS/latency |
+| **Calibration** | Per-user profiles with auto-calibration (5th/95th percentile) |
+| **Playback** | Replay recordings without webcam — great for TD patch development |
+| **Tests** | pytest unit + integration tests, GitHub Actions CI on Python 3.10–3.12 |
+
+---
 
 ## Installation
 
-### Prerequisites
-- Python 3.8 or higher
-- Webcam
-
-### Setup Steps
-
-1. **Clone/Navigate to project directory**:
-   ```bash
-   cd path/to/Mediapipe
-   ```
-
-2. **Create virtual environment** (recommended):
-   ```bash
-   python -m venv venv
-   venv\Scripts\activate  # On Windows
-   # or
-   source venv/bin/activate  # On macOS/Linux
-   ```
-
-3. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-## Usage
-
-### Running the Application
+Requires **Python 3.10+** and a webcam.
 
 ```bash
-python hand_tracker.py
+# Clone the repo
+git clone https://github.com/vaibhavi4246/hand-tracking-bridge
+cd hand-tracking-bridge
+
+# Create and activate virtual environment
+python -m venv venv
+venv\Scripts\activate        # Windows
+# source venv/bin/activate   # macOS/Linux
+
+# Install (core only)
+pip install -e .
+
+# Install with dashboard + WebSocket support
+pip install -e ".[dashboard,websocket]"
+
+# Install with dev tools (tests, linting)
+pip install -e ".[dev]"
 ```
 
-The application will:
-1. Open your webcam
-2. Display a live feed with hand landmarks and gesture values
-3. Send OSC messages to localhost:7000
-4. Press 'q' to quit gracefully
+---
 
-### TouchDesigner Integration
+## Quick Start
 
-#### Setup in TouchDesigner:
+```bash
+# Basic — OSC to TouchDesigner on port 7000
+hand-tracker
 
-1. **Create OSC In CHOP**:
-   - Add an `oscin` CHOP to your network
-   - Set the **Port** to `7000`
-   - Set the **Active** to toggle input on/off
+# With live web dashboard at http://localhost:8000
+hand-tracker --dashboard --ws
 
-2. **Auto-Created Channels**:
-   The OSC In CHOP will automatically create channels for:
-   ```
-   /hand/0/wrist/x         → Hand 0 wrist X (0.0-1.0)
-   /hand/0/wrist/y         → Hand 0 wrist Y (0.0-1.0)
-   /hand/0/pinch           → Hand 0 pinch value (0.0-1.0)
-   /hand/0/openness        → Hand 0 openness (0.0-1.0)
-   /hand/0/present         → Hand 0 detected (1=yes, 0=no)
-   /hand/1/wrist/x         → Hand 1 wrist X
-   /hand/1/wrist/y         → Hand 1 wrist Y
-   /hand/1/pinch           → Hand 1 pinch value
-   /hand/1/openness        → Hand 1 openness
-   /hand/1/present         → Hand 1 detected
-   ```
+# Custom OSC target
+hand-tracker --osc-host 192.168.1.50 --osc-port 9000
 
-3. **Extract Specific Channels**:
-   Use a `select` CHOP to isolate channels:
-   ```
-   select CHOP → channel: hand_0_wrist_x
-   ```
+# Calibrate for your hand, then use the profile
+hand-tracker --calibrate --profile alice
+hand-tracker --profile alice
 
-4. **Normalize and Map Values**:
-   Use `math` CHOP for range remapping:
-   - For values already 0-1: pass through
-   - For positioning: multiply by target range
-   - For presence: convert to boolean logic (>0.5)
+# Record a session, replay later
+hand-tracker --record recordings/session.jsonl
+hand-tracker --playback recordings/session.jsonl --speed 0.5
 
-5. **Example Setup Chain**:
-   ```
-   oscin → select (hand_0_wrist_x) → math (multiply by width) → null
-                                  ↓
-                              (use for X position)
-   ```
+# All options
+hand-tracker --help
+```
 
-## OSC Address Structure
+---
 
-All OSC messages are floats unless specified as integers:
+## OSC Address Reference
+
+All messages sent as `OscBundle` for atomic delivery. Addresses per hand:
 
 | Address | Type | Range | Description |
 |---------|------|-------|-------------|
-| `/hand/0/wrist/x` | float | 0.0-1.0 | Right hand wrist horizontal position |
-| `/hand/0/wrist/y` | float | 0.0-1.0 | Right hand wrist vertical position |
-| `/hand/0/pinch` | float | 0.0-1.0 | Right hand pinch intensity (1=pinched, 0=open) |
-| `/hand/0/openness` | float | 0.0-1.0 | Right hand openness (1=fully open, 0=closed) |
-| `/hand/0/present` | int | 0 or 1 | Right hand detected? |
-| `/hand/1/wrist/x` | float | 0.0-1.0 | Left hand wrist horizontal position |
-| `/hand/1/wrist/y` | float | 0.0-1.0 | Left hand wrist vertical position |
-| `/hand/1/pinch` | float | 0.0-1.0 | Left hand pinch intensity |
-| `/hand/1/openness` | float | 0.0-1.0 | Left hand openness |
-| `/hand/1/present` | int | 0 or 1 | Left hand detected? |
+| `/hand/{i}/present` | int | 0 or 1 | Hand detected |
+| `/hand/{i}/wrist/x` | float | 0–1 | Wrist X (left=0, right=1) |
+| `/hand/{i}/wrist/y` | float | 0–1 | Wrist Y (bottom=0, top=1) |
+| `/hand/{i}/pinch` | float | 0–1 | Thumb–index distance (1=pinched) |
+| `/hand/{i}/openness` | float | 0–1 | Average fingertip spread |
+| `/hand/{i}/gesture` | string | — | `fist` / `open` / `peace` / `thumbs_up` / `pointing` / `none` |
+| `/hand/{i}/palm/roll` | float | radians | Palm roll |
+| `/hand/{i}/palm/pitch` | float | radians | Palm pitch |
+| `/hand/{i}/palm/yaw` | float | radians | Palm yaw |
+| `/hand/{i}/velocity/x` | float | — | Wrist horizontal velocity |
+| `/hand/{i}/velocity/y` | float | — | Wrist vertical velocity |
+| `/hand/{i}/finger/thumb` | float | 0–1 | Thumb flexion |
+| `/hand/{i}/finger/index` | float | 0–1 | Index flexion |
+| `/hand/{i}/finger/middle` | float | 0–1 | Middle flexion |
+| `/hand/{i}/finger/ring` | float | 0–1 | Ring flexion |
+| `/hand/{i}/finger/pinky` | float | 0–1 | Pinky flexion |
+
+---
+
+## TouchDesigner Setup
+
+1. Add an **OSC In CHOP** → set Port to `7000`
+2. Use a **Select CHOP** to pick specific channels (e.g. `hand_0_pinch`)
+3. Use a **Math CHOP** to remap 0–1 to your target range
+
+See [TOUCHDESIGNER_EXAMPLES.md](TOUCHDESIGNER_EXAMPLES.md) for 8 complete example patches.
+
+---
+
+## Architecture
+
+```
+Webcam
+  │
+  ▼ (bounded queue, maxsize=2 — drops stale frames)
+CaptureThread
+  │
+  ▼ (frame_queue)
+InferenceThread  ←── MediaPipe + GestureCalculator + OneEuroFilter + GestureClassifier
+  │
+  ▼ (gesture_queue)
+DispatcherThread ──► OSCSink       → TouchDesigner (UDP:7000)
+                ──► WebSocketSink  → Browser dashboard (WS:8765)
+                ──► FileSink       → JSONL recording
+
+Main thread: OpenCV visualization window
+```
+
+Key design decisions:
+
+- **Bounded queues + frame-drop policy** — system always operates on the most recent frame; slow inference never builds latency backlog
+- **Frozen dataclasses (`GestureFrame`)** — immutable across thread boundaries, no locks needed
+- **Pure functions in `calculator.py`** — no state, fully testable without mocking
+- **`OutputSink` ABC** — adding MIDI/DMX output requires zero pipeline changes (Open/Closed Principle)
+- **One Euro Filter** over EMA — adapts smoothing cutoff to signal velocity (Casiez et al., CHI 2012)
+
+---
 
 ## Gesture Calculations
 
-### Pinch Distance
-- Measures euclidean distance between thumb tip (landmark 4) and index finger tip (landmark 8)
-- Normalized: 1.0 = fully pinched, 0.0 = open
-- Inverted: 1.0 - (distance / max_distance)
-
-### Hand Openness
-- Average distance of all 5 fingertips (landmarks 4, 8, 12, 16, 20) from wrist (landmark 0)
-- Normalized: 1.0 = fully open hand, 0.0 = closed fist
-- Formula: (avg_distance - 0.15) / 0.4, clipped to 0.0-1.0
-
-### Wrist Position
-- Direct X, Y coordinates from wrist landmark
-- Normalized to 0.0-1.0 (camera frame dimensions)
-- Y is inverted (top of frame = 1.0, bottom = 0.0)
-
-## Smoothing
-
-All values are smoothed using exponential moving average (EMA):
+### Finger Flexion
+PIP joint angle via dot product of bone vectors:
 ```
-smoothed_value = α * new_value + (1 - α) * previous_value
-where α = 0.7
+v1 = MCP → PIP
+v2 = PIP → DIP
+flexion = arccos(dot(v1, v2) / (|v1| * |v2|)) / (π/2)   ∈ [0, 1]
 ```
 
-This reduces jitter while maintaining responsiveness.
-
-## Landmark Reference
-
-MediaPipe Hands uses 21 landmarks per hand:
-
+### Palm Orientation
+Palm plane normal from cross product:
 ```
-Landmark Index → Body Part
-0  → Wrist
-1-4   → Thumb (base to tip)
-5-8   → Index (base to tip)
-9-12  → Middle (base to tip)
-13-16 → Ring (base to tip)
-17-20 → Pinky (base to tip)
+normal = cross(wrist→index_mcp, wrist→pinky_mcp)
+roll  = atan2(normal.x, normal.z)
+pitch = atan2(normal.y, normal.z)
+yaw   = atan2(normal.x, normal.y)
 ```
 
-Key landmarks used in this application:
-- **0** = Wrist
-- **4** = Thumb tip
-- **8** = Index tip
-- **12** = Middle tip
-- **16** = Ring tip
-- **20** = Pinky tip
+### Smoothing — One Euro Filter
+Adapts the cutoff frequency based on signal derivative:
+```
+cutoff = min_cutoff + beta * |dx/dt|
+```
+Fast gestures → higher cutoff → less lag. Stationary pose → lower cutoff → less noise.
+
+---
+
+## Running Tests
+
+```bash
+pip install -e ".[dev]"
+pytest tests/ -v --cov=hand_tracking_bridge
+```
+
+Tests cover:
+- All gesture calculation functions (pure unit tests, no hardware needed)
+- EMA and One Euro Filter convergence and edge cases
+- Gesture classifier hysteresis timing
+- OSCSink integration (real UDP socket on ephemeral port)
+
+---
+
+## Project Structure
+
+```
+hand-tracking-bridge/
+├── pyproject.toml                   # Package config, CLI entry point
+├── src/hand_tracking_bridge/
+│   ├── cli.py                       # hand-tracker entry point
+│   ├── config.py                    # Pydantic AppConfig
+│   ├── pipeline/                    # Threaded capture / inference / dispatch
+│   ├── gestures/                    # types, calculator, smoother, classifier
+│   ├── sinks/                       # OSCSink, WebSocketSink, FileSink
+│   ├── calibration/                 # AutoCalibrator + profiles
+│   ├── dashboard/                   # FastAPI server + vanilla JS frontend
+│   └── playback/                    # PlaybackThread (replay recordings)
+├── tests/
+│   ├── unit/                        # Calculator, classifier, smoother tests
+│   └── integration/                 # OSCSink UDP test
+└── .github/workflows/ci.yml         # GitHub Actions: test on 3.10 / 3.11 / 3.12
+```
+
+---
 
 ## Troubleshooting
 
-### No OSC messages being received in TouchDesigner
-- Verify the OSC In CHOP port is set to `7000`
-- Check that the Python app shows "OSC client initialized" in logs
-- Ensure firewall isn't blocking localhost:7000
-- Look for "OSC messages sent" in the debug overlay
+| Problem | Fix |
+|---------|-----|
+| Hands not detected | Improve lighting; keep hands within 50–150 cm of camera |
+| High jitter | Switch smoother: `--smoother one_euro` (default); lower `--ema-alpha` if using EMA |
+| No OSC in TouchDesigner | Confirm OSC In CHOP port = 7000; check Windows Firewall for localhost |
+| Camera not opening | Try `--camera 1` or `--camera 2` |
+| Low FPS | Reduce resolution: `--width 640 --height 480` |
+| Module not found | Ensure venv is active and `pip install -e .` completed |
 
-### Hands not being detected
-- Ensure good lighting
-- Keep hands within frame and in front of camera
-- Try moving closer to camera (within 1-2 meters)
-- Check webcam permissions
-
-### High jitter in values
-- The smoothing is set to α=0.7 for responsiveness
-- To reduce jitter more, modify `self.alpha` in `hand_tracker.py` (lower value = more smoothing)
-- Example: `self.alpha = 0.5` for heavier smoothing
-
-### Low FPS
-- Reduce webcam resolution in `cap.set()` calls
-- Check CPU usage (MediaPipe is GPU-accelerated on some systems)
-- Disable debug visualization temporarily
-- Close other applications
-
-## Performance Notes
-
-- Targets 30 FPS on standard hardware
-- MediaPipe Hands detection is optimized for real-time use
-- Frame rate is controlled to maintain consistent 30 FPS
-- All values are transmitted every frame to OSC
-
-## Code Structure
-
-```
-hand_tracker.py
-├── HandTracker class
-│   ├── __init__()              → Setup MediaPipe and OSC
-│   ├── process_frame()         → Detect landmarks and calculate gestures
-│   ├── calculate_pinch()       → Compute pinch distance
-│   ├── calculate_openness()    → Compute hand openness
-│   ├── smooth_value()          → Apply EMA smoothing
-│   ├── send_osc()              → Transmit OSC messages
-│   ├── _draw_debug_info()      → Render debug window
-│   └── run()                   → Main event loop
-└── main()                       → Entry point
-```
-
-## Dependencies
-
-- **mediapipe** (0.10.9): Hand pose estimation
-- **opencv-python** (4.9.0.80): Webcam capture and visualization
-- **python-osc** (1.8.3): OSC protocol client
-- **numpy** (1.26.4): Numerical computations
+---
 
 ## License
 
-Created for TouchDesigner real-time hand tracking applications.
-
-## Advanced Usage
-
-### Custom OSC Host/Port
-```python
-tracker = HandTracker(osc_host='192.168.1.100', osc_port=9000)
-tracker.run()
-```
-
-### Custom Target FPS
-```python
-tracker.run(target_fps=60)  # Run at 60 FPS instead of 30
-```
-
-### Adjusting Smoothing
-Modify the `self.alpha` value in `HandTracker.__init__()`:
-- Lower values (0.3-0.5): More smoothing, less responsive
-- Higher values (0.7-0.9): Less smoothing, more responsive
-
-### Single Hand Mode
-Comment out or modify the hand detection loop in `process_frame()` to track only the primary hand.
+MIT
