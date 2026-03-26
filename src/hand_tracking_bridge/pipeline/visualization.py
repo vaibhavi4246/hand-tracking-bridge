@@ -56,8 +56,14 @@ class Visualizer:
             cv2.imshow(self.title, frame)
 
         key = cv2.waitKey(1) & 0xFF
-        if key == ord("q") or cv2.getWindowProperty(self.title, cv2.WND_PROP_VISIBLE) < 1:
+        if key == ord("q"):
             return False
+        # Only check window visibility after imshow has been called at least once;
+        # getWindowProperty returns -1 on a non-existent window, which would
+        # otherwise cause an immediate exit before the first frame arrives.
+        if self._last_frame is not None:
+            if cv2.getWindowProperty(self.title, cv2.WND_PROP_VISIBLE) < 1:
+                return False
         return True
 
     def _calculate_fps(self) -> float:

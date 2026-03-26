@@ -13,12 +13,16 @@ import logging
 import queue
 import threading
 import time
+import urllib.request
 from collections import deque
-from typing import Dict, List, Optional, Tuple
+from pathlib import Path
+from typing import Dict, List, Tuple
 
 import cv2
 import mediapipe as mp
 import numpy as np
+from mediapipe.tasks import python as mp_python
+from mediapipe.tasks.python import vision as mp_vision
 
 from hand_tracking_bridge.config import CalibrationConfig, InferenceConfig
 from hand_tracking_bridge.gestures import calculator as calc
@@ -33,12 +37,37 @@ from hand_tracking_bridge.gestures.types import (
 
 logger = logging.getLogger(__name__)
 
-mp_hands = mp.solutions.hands
-mp_drawing = mp.solutions.drawing_utils
-mp_drawing_styles = mp.solutions.drawing_styles
+_mp_drawing = mp_vision.drawing_utils
+_mp_drawing_styles = mp_vision.drawing_styles
+_HAND_CONNECTIONS = mp_vision.HandLandmarksConnections.HAND_CONNECTIONS
+
+_MODEL_URL = (
+    "https://storage.googleapis.com/mediapipe-models/"
+    "hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"
+)
+_MODEL_FILENAME = "hand_landmarker.task"
 
 # History depth for velocity/acceleration calculations
 _DYNAMICS_HISTORY = 6
+
+
+def _get_model_path() -> str:
+    """Return path to hand_landmarker.task, downloading from Google if absent."""
+    local = Path(_MODEL_FILENAME)
+    if local.exists():
+        return str(local)
+
+    user_dir = Path.home() / ".hand_tracking_bridge"
+    user_dir.mkdir(exist_ok=True)
+    model_path = user_dir / _MODEL_FILENAME
+
+    if not model_path.exists():
+        print(f"[hand-tracker] Downloading hand landmarker model to {model_path} ...")
+        logger.info("Downloading hand landmarker model from %s", _MODEL_URL)
+        urllib.request.urlretrieve(_MODEL_URL, model_path)
+        print("[hand-tracker] Model download complete.")
+
+    return str(model_path)
 
 
 class _HandState:
@@ -68,7 +97,7 @@ class _HandState:
 
 class InferenceThread(threading.Thread):
     """
-    Pulls frames from frame_queue, runs MediaPipe, emits GestureFrames.
+    Pulls frames from frame_queue, runs MediaPipe Tasks, emits GestureFrames.
     """
 
     def __init__(
@@ -88,17 +117,23 @@ class InferenceThread(threading.Thread):
         self.config = config
         self.calibration_profile = calibration_profile
 
-        self._hands = None
+        self._landmarker = None
         self._hand_states: Dict[int, _HandState] = {}
         self._frame_id = 0
 
     def run(self) -> None:
-        self._hands = mp_hands.Hands(
-            max_num_hands=self.config.max_num_hands,
-            min_detection_confidence=self.config.min_detection_confidence,
+        model_path = _get_model_path()
+        base_options = mp_python.BaseOptions(model_asset_path=model_path)
+        options = mp_vision.HandLandmarkerOptions(
+            base_options=base_options,
+            running_mode=mp_vision.RunningMode.VIDEO,
+            num_hands=self.config.max_num_hands,
+            min_hand_detection_confidence=self.config.min_detection_confidence,
+            min_hand_presence_confidence=self.config.min_detection_confidence,
             min_tracking_confidence=self.config.min_tracking_confidence,
         )
-        logger.info("InferenceThread: MediaPipe initialized")
+        self._landmarker = mp_vision.HandLandmarker.create_from_options(options)
+        logger.info("InferenceThread: MediaPipe Tasks initialized")
 
         while not self.shutdown.is_set():
             try:
@@ -118,8 +153,8 @@ class InferenceThread(threading.Thread):
             except queue.Full:
                 pass  # Visualization is slow; skip frame
 
-        if self._hands:
-            self._hands.close()
+        if self._landmarker:
+            self._landmarker.close()
         logger.info("InferenceThread: stopped")
 
     def _process(self, captured_at: float, frame: np.ndarray) -> Tuple[GestureFrame, np.ndarray]:
@@ -127,31 +162,32 @@ class InferenceThread(threading.Thread):
         annotated = frame.copy()
 
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        rgb.flags.writeable = False
-        results = self._hands.process(rgb)
-        rgb.flags.writeable = True
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+        timestamp_ms = int(captured_at * 1000)
+
+        result = self._landmarker.detect_for_video(mp_image, timestamp_ms)
         processed_at = time.monotonic()
 
         gesture_results: List[GestureResult] = []
 
-        if results.multi_hand_landmarks:
-            for hand_idx, (hand_lm, hand_info) in enumerate(
-                zip(results.multi_hand_landmarks, results.multi_handedness)
+        if result.hand_landmarks:
+            for hand_idx, (hand_landmarks, handedness_list) in enumerate(
+                zip(result.hand_landmarks, result.handedness)
             ):
-                handedness = hand_info.classification[0].label
+                handedness = handedness_list[0].category_name
 
                 # Draw landmarks on annotated frame
-                mp_drawing.draw_landmarks(
+                _mp_drawing.draw_landmarks(
                     annotated,
-                    hand_lm,
-                    mp_hands.HAND_CONNECTIONS,
-                    mp_drawing_styles.get_default_hand_landmarks_style(),
-                    mp_drawing_styles.get_default_hand_connections_style(),
+                    hand_landmarks,
+                    _HAND_CONNECTIONS,
+                    _mp_drawing_styles.get_default_hand_landmarks_style(),
+                    _mp_drawing_styles.get_default_hand_connections_style(),
                 )
 
                 # Convert to numpy array (21, 3)
                 landmarks = np.array(
-                    [[lm.x, lm.y, lm.z] for lm in hand_lm.landmark],
+                    [[lm.x, lm.y, lm.z] for lm in hand_landmarks],
                     dtype=np.float32,
                 )
 
