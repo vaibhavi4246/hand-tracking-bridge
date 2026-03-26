@@ -30,6 +30,7 @@ from hand_tracking_bridge.config import (
     InferenceConfig,
     OSCConfig,
     RecordingConfig,
+    SoundConfig,
     VisualizationConfig,
     WebSocketConfig,
 )
@@ -67,6 +68,15 @@ def build_sinks(config: AppConfig) -> List[OutputSink]:
         sink = DashboardSink()
         sink.open()
         sinks.append(sink)
+
+    if config.sound.enabled:
+        try:
+            from hand_tracking_bridge.sinks.sound_sink import SoundSink
+            sink = SoundSink()
+            sink.open()
+            sinks.append(sink)
+        except ImportError as exc:
+            logging.warning("SoundSink: %s", exc)
 
     return sinks
 
@@ -228,6 +238,10 @@ def parse_args() -> argparse.Namespace:
     cal.add_argument("--profile", default="default", metavar="NAME",
                      help="Calibration profile name to load/save")
 
+    # Sound
+    parser.add_argument("--sound", action="store_true",
+                        help="Enable theremin-style audio synth (requires sounddevice)")
+
     # Misc
     parser.add_argument("--no-window", action="store_true", help="Disable visualization window")
     parser.add_argument("--log-level", default="INFO",
@@ -273,6 +287,9 @@ def args_to_config(args: argparse.Namespace) -> AppConfig:
         ),
         visualization=VisualizationConfig(
             show_window=not args.no_window,
+        ),
+        sound=SoundConfig(
+            enabled=args.sound,
         ),
         log_level=args.log_level,
     )

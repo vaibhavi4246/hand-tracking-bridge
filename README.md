@@ -15,7 +15,7 @@ A real-time hand gesture pipeline that bridges MediaPipe hand tracking with Touc
 | **Classification** | Discrete gestures: `fist`, `open`, `peace`, `thumbs_up`, `pointing` with temporal hysteresis |
 | **Smoothing** | One Euro Filter (adaptive, low-latency) + EMA |
 | **Output** | OSC (TouchDesigner), WebSocket (browser), JSONL recording |
-| **Dashboard** | Live metrics UI at `localhost:8000` — skeleton canvas, gesture bars, FPS/latency |
+| **Dashboard** | Live metrics UI at `localhost:8000` — skeleton canvas, gesture bars, FPS/latency, **built-in theremin synth** |
 | **Infinite Void** | 3D hand-controlled interactive scene at `localhost:8000/void` — grab, throw, spawn objects + sound synthesis |
 | **Calibration** | Per-user profiles with auto-calibration (5th/95th percentile) |
 | **Playback** | Replay recordings without webcam — great for TD patch development |
@@ -43,6 +43,12 @@ pip install -e .
 # Install with dashboard + WebSocket support
 pip install -e ".[dashboard,websocket]"
 
+# Install with dashboard + sound synth (server-side)
+pip install -e ".[dashboard,sound]"
+
+# Install everything
+pip install -e ".[all]"
+
 # Install with dev tools (tests, linting)
 pip install -e ".[dev]"
 ```
@@ -60,6 +66,9 @@ hand-tracker
 # With live web dashboard + Infinite Void at http://localhost:8000
 hand-tracker --dashboard
 
+# Dashboard + theremin synth (server-side audio output)
+hand-tracker --dashboard --sound
+
 # Disable the OpenCV preview window (useful on headless setups)
 hand-tracker --dashboard --no-window
 
@@ -76,6 +85,33 @@ hand-tracker --playback recordings/session.jsonl --speed 0.5
 
 # All options
 hand-tracker --help
+```
+
+---
+
+## Dashboard — Sound Synth
+
+Open **http://localhost:8000** while `hand-tracker --dashboard` is running, then click **♪ SOUND OFF** in the header to enable the browser-side theremin synthesizer (no extra install needed — runs entirely via Web Audio API).
+
+| Hand input | Effect |
+|---|---|
+| `wrist_x` left ↔ right | Pitch — pentatonic scale A3–A5, quantized to no wrong notes |
+| `wrist_y` bottom ↔ top | Volume |
+| `openness` | Vibrato depth (LFO at 5 Hz) |
+| `pinch > 0.7` | Octave shift up |
+| `open` hand 🖐 | Sine wave (mellow) |
+| `fist` ✊ | Sawtooth (buzzy) |
+| `peace` ✌️ | Square wave (retro) |
+| `thumbs_up` 👍 | Triangle wave (soft) |
+| `pointing` ☝️ | Mute |
+
+A live **oscilloscope** in the Sound Synth card shows the waveform in real time. All parameter changes ramp smoothly (50 ms) to prevent audio clicks.
+
+For server-side audio output (plays through the machine running `hand-tracker`), add the `--sound` flag and install `sounddevice`:
+
+```bash
+pip install sounddevice
+hand-tracker --dashboard --sound
 ```
 
 ---
@@ -161,6 +197,7 @@ DispatcherThread ──► OSCSink        → TouchDesigner (UDP:7000)
                 ──► WebSocketSink   → External WS clients (WS:8765)
                 ──► FileSink        → JSONL recording
                 ──► DashboardSink   → FastAPI /ws → browser dashboard + Infinite Void
+                ──► SoundSink       → sounddevice theremin synth (server-side, opt-in)
 
 Main thread: OpenCV visualization window
 FastAPI thread: http://localhost:8000  (dashboard + /void)
@@ -230,7 +267,7 @@ hand-tracking-bridge/
 │   ├── config.py                    # Pydantic AppConfig
 │   ├── pipeline/                    # Threaded capture / inference / dispatch
 │   ├── gestures/                    # types, calculator, smoother, classifier
-│   ├── sinks/                       # OSCSink, WebSocketSink, FileSink, DashboardSink
+│   ├── sinks/                       # OSCSink, WebSocketSink, FileSink, DashboardSink, SoundSink
 │   ├── calibration/                 # AutoCalibrator + profiles
 │   ├── dashboard/
 │   │   ├── server.py                # FastAPI server (/, /void, /ws, /health)
@@ -257,6 +294,9 @@ hand-tracking-bridge/
 | Low FPS | Reduce resolution: `--width 640 --height 480` |
 | Module not found | Ensure venv is active and `pip install -e .` completed |
 | Void page shows no hands | Run with `--dashboard` flag; click the page once to connect audio |
+| Dashboard sound button missing | Hard-refresh the page (Ctrl+Shift+R) after updating |
+| No sound in dashboard | Click **♪ SOUND OFF** first — browsers require a user gesture to start Web Audio |
+| `--sound` flag errors | Install `sounddevice`: `pip install sounddevice` |
 | Model download fails | Manually download `hand_landmarker.task` and place in `~/.hand_tracking_bridge/` |
 
 ---

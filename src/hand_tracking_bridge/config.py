@@ -75,6 +75,10 @@ class VisualizationConfig(BaseModel):
     window_title: str = "Hand Tracking Bridge"
 
 
+class SoundConfig(BaseModel):
+    enabled: bool = False
+
+
 class AppConfig(BaseModel):
     capture: CaptureConfig = Field(default_factory=CaptureConfig)
     inference: InferenceConfig = Field(default_factory=InferenceConfig)
@@ -84,6 +88,7 @@ class AppConfig(BaseModel):
     dashboard: DashboardConfig = Field(default_factory=DashboardConfig)
     calibration: CalibrationConfig = Field(default_factory=CalibrationConfig)
     visualization: VisualizationConfig = Field(default_factory=VisualizationConfig)
+    sound: SoundConfig = Field(default_factory=SoundConfig)
     log_level: str = Field(default="INFO")
 
 

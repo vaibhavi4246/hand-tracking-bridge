@@ -152,6 +152,39 @@
       font-size: 0.7rem;
       color: #444;
     }
+
+    #sound-toggle {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      color: #888;
+      font-family: 'Courier New', monospace;
+      font-size: 0.75rem;
+      padding: 4px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      letter-spacing: 1px;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    #sound-toggle.active {
+      border-color: #00d4aa;
+      color: #00d4aa;
+    }
+
+    #scope-canvas {
+      width: 100%;
+      height: 80px;
+      background: #0a0a0a;
+      border-radius: 4px;
+      display: block;
+      margin-bottom: 10px;
+    }
+
+    .sound-params {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 8px;
+    }
   </style>
 </head>
 <body>
@@ -165,6 +198,8 @@
     <span id="fps-display">0 fps</span>
     &nbsp;|&nbsp;
     <span id="latency-display">0 ms</span>
+    &nbsp;|&nbsp;
+    <button id="sound-toggle">♪ SOUND OFF</button>
   </div>
 </header>
 
@@ -191,6 +226,33 @@
       <div class="stat-box">
         <div class="stat-label">FPS</div>
         <div class="stat-value" id="stat-fps">0</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Sound Synth <span id="sound-state" style="color:#555;font-size:0.7rem;margin-left:6px;">off — click ♪ SOUND OFF to enable</span></h2>
+    <canvas id="scope-canvas" width="600" height="80"></canvas>
+    <div class="sound-params">
+      <div class="stat-box">
+        <div class="stat-label">Note</div>
+        <div class="stat-value" id="sound-note">—</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Wave</div>
+        <div class="stat-value" id="sound-wave">—</div>
+      </div>
+    </div>
+    <div class="metrics" style="margin-top:10px;">
+      <div class="metric-row">
+        <span class="metric-name">volume</span>
+        <div class="bar-bg"><div class="bar-fill" id="sound-bar-vol" style="width:0%"></div></div>
+        <span class="metric-value" id="sound-val-vol">0.00</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-name">vibrato</span>
+        <div class="bar-bg"><div class="bar-fill yellow" id="sound-bar-vib" style="width:0%"></div></div>
+        <span class="metric-value" id="sound-val-vib">0.00</span>
       </div>
     </div>
   </div>
@@ -404,6 +466,7 @@ function onFrame(frame) {
   document.getElementById('stat-hands').textContent = present;
 
   frame.hands.forEach(hand => updateHand(hand));
+  updateSynth(frame);
 }
 
 // ─── Ensure hand cards exist ─────────────────────────────────────────────
@@ -452,6 +515,188 @@ function connect() {
 // ─── Boot ─────────────────────────────────────────────────────────────────
 ensureHandCards(2);
 connect();
+
+// ─── Web Audio Synth ──────────────────────────────────────────────────────
+const PENTATONIC_SEMITONES = [0, 3, 5, 7, 10, 12, 15, 17, 19, 22, 24];
+const BASE_FREQ = 220.0; // A3
+
+const NOTE_NAMES = ['A','A#','B','C','C#','D','D#','E','F','F#','G','G#'];
+const OCTAVE_BASE = 3; // A3
+
+const GESTURE_WAVE = {
+  open:      'sine',
+  fist:      'sawtooth',
+  peace:     'square',
+  thumbs_up: 'triangle',
+  pointing:  'sine', // muted via gain
+  none:      'sine',
+};
+
+function semitoneToHz(n) {
+  return BASE_FREQ * Math.pow(2, n / 12);
+}
+
+function semitoneToNoteName(n) {
+  const midiNote = 57 + n; // A3 = MIDI 57
+  const name = NOTE_NAMES[midiNote % 12];
+  const octave = Math.floor(midiNote / 12) - 1;
+  return `${name}${octave}`;
+}
+
+function pentatonicFreq(x, octaveShift) {
+  const idx = Math.round(x * (PENTATONIC_SEMITONES.length - 1));
+  const clamped = Math.max(0, Math.min(idx, PENTATONIC_SEMITONES.length - 1));
+  const semitones = PENTATONIC_SEMITONES[clamped] + octaveShift * 12;
+  return { hz: semitoneToHz(semitones), name: semitoneToNoteName(semitones) };
+}
+
+let audioCtx = null;
+let mainOsc = null;
+let gainNode = null;
+let lfoOsc = null;
+let lfoGain = null;
+let analyser = null;
+let soundEnabled = false;
+let scopeAnimId = null;
+
+function buildAudioGraph() {
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 1024;
+
+  gainNode = audioCtx.createGain();
+  gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+
+  lfoOsc = audioCtx.createOscillator();
+  lfoOsc.type = 'sine';
+  lfoOsc.frequency.setValueAtTime(5, audioCtx.currentTime);
+
+  lfoGain = audioCtx.createGain();
+  lfoGain.gain.setValueAtTime(0, audioCtx.currentTime);
+
+  mainOsc = audioCtx.createOscillator();
+  mainOsc.type = 'sine';
+  mainOsc.frequency.setValueAtTime(BASE_FREQ, audioCtx.currentTime);
+
+  lfoOsc.connect(lfoGain);
+  lfoGain.connect(mainOsc.frequency);
+  mainOsc.connect(gainNode);
+  gainNode.connect(analyser);
+  analyser.connect(audioCtx.destination);
+
+  mainOsc.start();
+  lfoOsc.start();
+}
+
+function updateSynth(frame) {
+  if (!soundEnabled || !audioCtx) return;
+
+  // Pick the first present hand (prefer Right)
+  let hand = null;
+  for (const h of frame.hands) {
+    if (h.present) {
+      if (h.handedness === 'Right') { hand = h; break; }
+      hand = h;
+    }
+  }
+
+  const now = audioCtx.currentTime;
+  const ramp = 0.05; // 50ms smooth ramp
+
+  if (!hand) {
+    gainNode.gain.linearRampToValueAtTime(0, now + ramp);
+    document.getElementById('sound-state').textContent = 'no hand detected';
+    return;
+  }
+
+  const octaveShift = hand.pinch > 0.7 ? 1 : 0;
+  const { hz, name } = pentatonicFreq(hand.wrist_x, octaveShift);
+
+  // Volume: wrist_y (0=bottom quiet, 1=top loud), mute on pointing
+  const isMuted = hand.discrete_gesture === 'pointing';
+  const volume = isMuted ? 0 : Math.min(0.75, hand.wrist_y * 1.2);
+
+  // Vibrato depth in Hz — openness controls depth (0–30 Hz range)
+  const vibratoDepth = hand.openness * 30;
+
+  // Waveform
+  const waveType = GESTURE_WAVE[hand.discrete_gesture] || 'sine';
+  if (mainOsc.type !== waveType) mainOsc.type = waveType;
+
+  // Apply smooth ramps
+  mainOsc.frequency.linearRampToValueAtTime(hz, now + ramp);
+  gainNode.gain.linearRampToValueAtTime(volume, now + ramp);
+  lfoGain.gain.linearRampToValueAtTime(vibratoDepth, now + ramp);
+
+  // Update sound card UI
+  document.getElementById('sound-note').textContent = isMuted ? 'MUTE' : name;
+  document.getElementById('sound-wave').textContent = isMuted ? '—' : waveType;
+  document.getElementById('sound-state').textContent = isMuted ? 'muted (pointing)' : 'active';
+
+  const volPct = Math.min(100, volume / 0.75 * 100);
+  const vibPct = Math.min(100, vibratoDepth / 30 * 100);
+  document.getElementById('sound-bar-vol').style.width = `${volPct}%`;
+  document.getElementById('sound-val-vol').textContent = volume.toFixed(2);
+  document.getElementById('sound-bar-vib').style.width = `${vibPct}%`;
+  document.getElementById('sound-val-vib').textContent = hand.openness.toFixed(2);
+}
+
+// ─── Oscilloscope ────────────────────────────────────────────────────────
+function drawScope() {
+  scopeAnimId = requestAnimationFrame(drawScope);
+  const canvas = document.getElementById('scope-canvas');
+  if (!canvas || !analyser) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+
+  const buf = new Float32Array(analyser.fftSize);
+  analyser.getFloatTimeDomainData(buf);
+
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.strokeStyle = '#00d4aa';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  const step = W / buf.length;
+  for (let i = 0; i < buf.length; i++) {
+    const x = i * step;
+    const y = (1 - (buf[i] * 0.5 + 0.5)) * H;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+
+// ─── Sound toggle button ─────────────────────────────────────────────────
+document.getElementById('sound-toggle').addEventListener('click', () => {
+  if (!soundEnabled) {
+    buildAudioGraph();
+    soundEnabled = true;
+    document.getElementById('sound-toggle').textContent = '♪ SOUND ON';
+    document.getElementById('sound-toggle').classList.add('active');
+    document.getElementById('sound-state').textContent = 'waiting for hand...';
+    drawScope();
+  } else {
+    soundEnabled = false;
+    if (audioCtx) { audioCtx.close(); audioCtx = null; }
+    if (scopeAnimId) { cancelAnimationFrame(scopeAnimId); scopeAnimId = null; }
+    mainOsc = gainNode = lfoOsc = lfoGain = analyser = null;
+    document.getElementById('sound-toggle').textContent = '♪ SOUND OFF';
+    document.getElementById('sound-toggle').classList.remove('active');
+    document.getElementById('sound-state').textContent = 'off — click ♪ SOUND OFF to enable';
+    document.getElementById('sound-note').textContent = '—';
+    document.getElementById('sound-wave').textContent = '—';
+
+    // Clear scope
+    const canvas = document.getElementById('scope-canvas');
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#0a0a0a';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+  }
+});
 </script>
 </body>
 </html>
