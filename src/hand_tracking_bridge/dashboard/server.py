@@ -17,7 +17,7 @@ from typing import List, Optional
 
 try:
     from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-    from fastapi.responses import HTMLResponse
+    from fastapi.responses import FileResponse, HTMLResponse
     from fastapi.staticfiles import StaticFiles
     _FASTAPI_AVAILABLE = True
 except ImportError:
@@ -89,6 +89,10 @@ def create_app() -> "FastAPI":
         if html_path.exists():
             return HTMLResponse(html_path.read_text(encoding="utf-8"))
         return HTMLResponse("<h1>Dashboard static files not found.</h1>")
+
+    @app.get("/void", response_class=FileResponse)
+    async def void_page() -> FileResponse:
+        return FileResponse(STATIC_DIR / "void.html", media_type="text/html")
 
     @app.get("/health")
     async def health() -> dict:

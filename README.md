@@ -2,7 +2,7 @@
 
 A real-time hand gesture pipeline that bridges MediaPipe hand tracking with TouchDesigner, web browsers, and any OSC-compatible software.
 
-**V2** — refactored from a single-file script into a production-grade multi-threaded pipeline with a plugin output architecture, advanced gesture recognition, a live web dashboard, per-user calibration, and a full CI-backed test suite.
+**V2** — refactored from a single-file script into a production-grade multi-threaded pipeline with a plugin output architecture, advanced gesture recognition, a live web dashboard, an infinite-void 3D interactive experience, per-user calibration, and a full CI-backed test suite.
 
 ---
 
@@ -10,12 +10,13 @@ A real-time hand gesture pipeline that bridges MediaPipe hand tracking with Touc
 
 | Category | Capability |
 |----------|-----------|
-| **Detection** | Up to 2 hands @ 30 FPS via MediaPipe |
+| **Detection** | Up to 2 hands @ 30 FPS via MediaPipe Tasks API |
 | **Gestures** | Pinch, openness, per-finger flexion (0–1), palm orientation (roll/pitch/yaw), wrist velocity & acceleration |
 | **Classification** | Discrete gestures: `fist`, `open`, `peace`, `thumbs_up`, `pointing` with temporal hysteresis |
 | **Smoothing** | One Euro Filter (adaptive, low-latency) + EMA |
 | **Output** | OSC (TouchDesigner), WebSocket (browser), JSONL recording |
-| **Dashboard** | Live web UI at `localhost:8000` — skeleton canvas, gesture bars, FPS/latency |
+| **Dashboard** | Live metrics UI at `localhost:8000` — skeleton canvas, gesture bars, FPS/latency |
+| **Infinite Void** | 3D hand-controlled interactive scene at `localhost:8000/void` — grab, throw, spawn objects + sound synthesis |
 | **Calibration** | Per-user profiles with auto-calibration (5th/95th percentile) |
 | **Playback** | Replay recordings without webcam — great for TD patch development |
 | **Tests** | pytest unit + integration tests, GitHub Actions CI on Python 3.10–3.12 |
@@ -24,7 +25,7 @@ A real-time hand gesture pipeline that bridges MediaPipe hand tracking with Touc
 
 ## Installation
 
-Requires **Python 3.10+** and a webcam.
+Requires **Python 3.10+** (including 3.13) and a webcam.
 
 ```bash
 # Clone the repo
@@ -46,6 +47,8 @@ pip install -e ".[dashboard,websocket]"
 pip install -e ".[dev]"
 ```
 
+> **First run:** the MediaPipe hand landmarker model (~8 MB) is automatically downloaded to `~/.hand_tracking_bridge/hand_landmarker.task` on first launch.
+
 ---
 
 ## Quick Start
@@ -54,8 +57,11 @@ pip install -e ".[dev]"
 # Basic — OSC to TouchDesigner on port 7000
 hand-tracker
 
-# With live web dashboard at http://localhost:8000
-hand-tracker --dashboard --ws
+# With live web dashboard + Infinite Void at http://localhost:8000
+hand-tracker --dashboard
+
+# Disable the OpenCV preview window (useful on headless setups)
+hand-tracker --dashboard --no-window
 
 # Custom OSC target
 hand-tracker --osc-host 192.168.1.50 --osc-port 9000
@@ -71,6 +77,36 @@ hand-tracker --playback recordings/session.jsonl --speed 0.5
 # All options
 hand-tracker --help
 ```
+
+---
+
+## Infinite Void — 3D Interactive Experience
+
+Open **http://localhost:8000/void** while `hand-tracker --dashboard` is running.
+
+Click the screen once to unlock audio, then show your hands to the camera.
+
+### Hand Controls
+
+| Action | Effect |
+|--------|--------|
+| Move wrist | Glowing cursor follows your hand in 3D space |
+| **Pinch** (thumb + index) | Grab the nearest floating object |
+| Move while pinching | Drag the object anywhere |
+| **Tilt palm** | Rotates the grabbed object (roll / pitch / yaw) |
+| **Openness** | Scales the grabbed object |
+| **Release pinch with velocity** | Throw / fling the object |
+| **Fist** ✊ | Spawn a new glowing 3D shape at your hand |
+| **Open palm** 🖐 | Explode nearby objects outward |
+| **Two hands** | Distance between wrists scales the grabbed object |
+
+### Sound
+
+- Hand height → pitch (lower hand = bass, 80–800 Hz)
+- Openness → filter brightness (closed = dark, open = bright)
+- Pinch → volume (louder when gripping)
+- Spawning / exploding → synthesized sound effects
+- Ambient drone activates when hands are detected
 
 ---
 
@@ -118,14 +154,16 @@ Webcam
 CaptureThread
   │
   ▼ (frame_queue)
-InferenceThread  ←── MediaPipe + GestureCalculator + OneEuroFilter + GestureClassifier
+InferenceThread  ←── MediaPipe Tasks API + GestureCalculator + OneEuroFilter + GestureClassifier
   │
   ▼ (gesture_queue)
-DispatcherThread ──► OSCSink       → TouchDesigner (UDP:7000)
-                ──► WebSocketSink  → Browser dashboard (WS:8765)
-                ──► FileSink       → JSONL recording
+DispatcherThread ──► OSCSink        → TouchDesigner (UDP:7000)
+                ──► WebSocketSink   → External WS clients (WS:8765)
+                ──► FileSink        → JSONL recording
+                ──► DashboardSink   → FastAPI /ws → browser dashboard + Infinite Void
 
 Main thread: OpenCV visualization window
+FastAPI thread: http://localhost:8000  (dashboard + /void)
 ```
 
 Key design decisions:
@@ -133,8 +171,9 @@ Key design decisions:
 - **Bounded queues + frame-drop policy** — system always operates on the most recent frame; slow inference never builds latency backlog
 - **Frozen dataclasses (`GestureFrame`)** — immutable across thread boundaries, no locks needed
 - **Pure functions in `calculator.py`** — no state, fully testable without mocking
-- **`OutputSink` ABC** — adding MIDI/DMX output requires zero pipeline changes (Open/Closed Principle)
+- **`OutputSink` ABC** — adding MIDI/DMX/dashboard output requires zero pipeline changes (Open/Closed Principle)
 - **One Euro Filter** over EMA — adapts smoothing cutoff to signal velocity (Casiez et al., CHI 2012)
+- **MediaPipe Tasks API** — compatible with Python 3.13 and mediapipe 0.10+
 
 ---
 
@@ -191,9 +230,13 @@ hand-tracking-bridge/
 │   ├── config.py                    # Pydantic AppConfig
 │   ├── pipeline/                    # Threaded capture / inference / dispatch
 │   ├── gestures/                    # types, calculator, smoother, classifier
-│   ├── sinks/                       # OSCSink, WebSocketSink, FileSink
+│   ├── sinks/                       # OSCSink, WebSocketSink, FileSink, DashboardSink
 │   ├── calibration/                 # AutoCalibrator + profiles
-│   ├── dashboard/                   # FastAPI server + vanilla JS frontend
+│   ├── dashboard/
+│   │   ├── server.py                # FastAPI server (/, /void, /ws, /health)
+│   │   └── static/
+│   │       ├── index.html           # Metrics dashboard
+│   │       └── void.html            # Infinite Void 3D experience (Three.js)
 │   └── playback/                    # PlaybackThread (replay recordings)
 ├── tests/
 │   ├── unit/                        # Calculator, classifier, smoother tests
@@ -213,6 +256,8 @@ hand-tracking-bridge/
 | Camera not opening | Try `--camera 1` or `--camera 2` |
 | Low FPS | Reduce resolution: `--width 640 --height 480` |
 | Module not found | Ensure venv is active and `pip install -e .` completed |
+| Void page shows no hands | Run with `--dashboard` flag; click the page once to connect audio |
+| Model download fails | Manually download `hand_landmarker.task` and place in `~/.hand_tracking_bridge/` |
 
 ---
 

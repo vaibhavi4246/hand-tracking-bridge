@@ -62,6 +62,12 @@ def build_sinks(config: AppConfig) -> List[OutputSink]:
         sink.open()
         sinks.append(sink)
 
+    if config.dashboard.enabled:
+        from hand_tracking_bridge.sinks.dashboard_sink import DashboardSink
+        sink = DashboardSink()
+        sink.open()
+        sinks.append(sink)
+
     return sinks
 
 
