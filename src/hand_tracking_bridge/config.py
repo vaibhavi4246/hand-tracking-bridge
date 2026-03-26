@@ -35,8 +35,8 @@ class InferenceConfig(BaseModel):
     # "ema" or "one_euro"
     smoother: str = Field(default="one_euro")
     ema_alpha: float = Field(default=0.7, ge=0.01, le=1.0)
-    one_euro_min_cutoff: float = Field(default=1.0, gt=0.0)
-    one_euro_beta: float = Field(default=0.007, ge=0.0)
+    one_euro_min_cutoff: float = Field(default=0.5, gt=0.0)
+    one_euro_beta: float = Field(default=0.01, ge=0.0)
 
 
 class OSCConfig(BaseModel):
