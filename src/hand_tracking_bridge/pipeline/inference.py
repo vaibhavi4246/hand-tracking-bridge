@@ -21,6 +21,7 @@ from typing import Dict, List, Tuple
 import cv2
 import mediapipe as mp
 import numpy as np
+from mediapipe.framework.formats import landmark_pb2
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
 
@@ -37,9 +38,9 @@ from hand_tracking_bridge.gestures.types import (
 
 logger = logging.getLogger(__name__)
 
-_mp_drawing = mp_vision.drawing_utils
-_mp_drawing_styles = mp_vision.drawing_styles
-_HAND_CONNECTIONS = mp_vision.HandLandmarksConnections.HAND_CONNECTIONS
+_mp_drawing = mp.solutions.drawing_utils
+_mp_drawing_styles = mp.solutions.drawing_styles
+_HAND_CONNECTIONS = mp.solutions.hands.HAND_CONNECTIONS
 
 _MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/"
@@ -76,7 +77,7 @@ class _HandState:
     def __init__(self, hand_index: int, smoother_type: str, ema_alpha: float,
                  one_euro_min_cutoff: float, one_euro_beta: float) -> None:
         self.hand_index = hand_index
-        self.classifier = GestureClassifier(hysteresis_frames=5)
+        self.classifier = GestureClassifier(hysteresis_frames=3)
         self.pos_history: deque = deque(maxlen=_DYNAMICS_HISTORY)
         self.vel_history: deque = deque(maxlen=_DYNAMICS_HISTORY)
         self.frame_count = 0
@@ -120,6 +121,7 @@ class InferenceThread(threading.Thread):
         self._landmarker = None
         self._hand_states: Dict[int, _HandState] = {}
         self._frame_id = 0
+        self._last_timestamp_ms = -1
 
     def run(self) -> None:
         model_path = _get_model_path()
@@ -164,6 +166,9 @@ class InferenceThread(threading.Thread):
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
         timestamp_ms = int(captured_at * 1000)
+        if timestamp_ms <= self._last_timestamp_ms:
+            timestamp_ms = self._last_timestamp_ms + 1
+        self._last_timestamp_ms = timestamp_ms
 
         result = self._landmarker.detect_for_video(mp_image, timestamp_ms)
         processed_at = time.monotonic()
@@ -177,9 +182,20 @@ class InferenceThread(threading.Thread):
                 handedness = handedness_list[0].category_name
 
                 # Draw landmarks on annotated frame
+                hand_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
+                hand_landmarks_proto.landmark.extend(
+                    [
+                        landmark_pb2.NormalizedLandmark(
+                            x=lm.x,
+                            y=lm.y,
+                            z=lm.z,
+                        )
+                        for lm in hand_landmarks
+                    ]
+                )
                 _mp_drawing.draw_landmarks(
                     annotated,
-                    hand_landmarks,
+                    hand_landmarks_proto,
                     _HAND_CONNECTIONS,
                     _mp_drawing_styles.get_default_hand_landmarks_style(),
                     _mp_drawing_styles.get_default_hand_connections_style(),

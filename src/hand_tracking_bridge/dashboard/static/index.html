@@ -8,11 +8,40 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      background: #0d0d0d;
+      background:
+        radial-gradient(circle at 15% 20%, rgba(0, 212, 170, 0.16), transparent 40%),
+        radial-gradient(circle at 85% 85%, rgba(240, 192, 64, 0.12), transparent 45%),
+        #0d0d0d;
       color: #e0e0e0;
       font-family: 'Courier New', monospace;
       padding: 16px;
       min-height: 100vh;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    body::before,
+    body::after {
+      content: '';
+      position: fixed;
+      inset: -20%;
+      pointer-events: none;
+      z-index: -1;
+      opacity: 0.25;
+      animation: drift 16s ease-in-out infinite alternate;
+    }
+
+    body::before {
+      background: conic-gradient(from 90deg, rgba(0, 212, 170, 0.18), transparent 50%, rgba(240, 192, 64, 0.16));
+      filter: blur(46px);
+    }
+
+    body::after {
+      background-image:
+        linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+      background-size: 34px 34px;
+      animation-duration: 24s;
     }
 
     header {
@@ -22,6 +51,7 @@
       margin-bottom: 20px;
       border-bottom: 1px solid #333;
       padding-bottom: 12px;
+      animation: reveal-up 500ms ease-out both;
     }
 
     header h1 { font-size: 1.2rem; color: #00d4aa; letter-spacing: 2px; text-transform: uppercase; }
@@ -31,10 +61,36 @@
     }
     #status-dot {
       width: 10px; height: 10px; border-radius: 50%; background: #555;
-      transition: background 0.3s;
+      transition: background 0.3s, box-shadow 0.3s;
     }
-    #status-dot.connected { background: #00d4aa; }
+    #status-dot.connected {
+      background: #00d4aa;
+      box-shadow: 0 0 0 0 rgba(0, 212, 170, 0.7);
+      animation: status-pulse 1.6s infinite;
+    }
     #status-dot.disconnected { background: #ff4444; }
+
+    .audio-btn {
+      border: 1px solid #2f5f53;
+      background: #12201b;
+      color: #9de4d0;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 0.72rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .audio-btn:hover {
+      background: #183128;
+      color: #c8fff0;
+      border-color: #3d7c6a;
+    }
+    .audio-btn.on {
+      background: #00d4aa;
+      color: #082018;
+      border-color: #00d4aa;
+      font-weight: bold;
+    }
 
     .grid {
       display: grid;
@@ -47,6 +103,16 @@
       border: 1px solid #2a2a2a;
       border-radius: 8px;
       padding: 16px;
+      opacity: 0;
+      transform: translateY(14px);
+      animation: reveal-up 550ms ease-out forwards;
+      transition: transform 220ms ease, border-color 220ms ease, box-shadow 220ms ease;
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+      border-color: #3a3a3a;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
     }
 
     .card h2 {
@@ -74,6 +140,11 @@
       margin-top: 10px;
       letter-spacing: 2px;
       text-transform: uppercase;
+      transition: transform 160ms ease, color 160ms ease;
+    }
+
+    .gesture-label.flash {
+      animation: gesture-bump 220ms ease;
     }
 
     .metrics { display: flex; flex-direction: column; gap: 10px; }
@@ -91,12 +162,16 @@
       height: 100%;
       background: #00d4aa;
       border-radius: 7px;
-      transition: width 0.05s linear;
+      transition: width 0.16s ease;
       min-width: 2px;
     }
     .bar-fill.red { background: #ff4c4c; }
     .bar-fill.yellow { background: #f0c040; }
     .metric-value { width: 40px; text-align: right; font-size: 0.75rem; color: #aaa; }
+
+    .value-pop {
+      animation: value-pop 200ms ease;
+    }
 
     .stats-grid {
       display: grid;
@@ -134,7 +209,7 @@
     .finger-bar-fill {
       width: 100%;
       background: #7b61ff;
-      transition: height 0.05s linear;
+      transition: height 0.16s ease;
       border-radius: 3px;
     }
     .finger-val { font-size: 0.65rem; color: #888; }
@@ -151,6 +226,42 @@
       text-align: center;
       font-size: 0.7rem;
       color: #444;
+      animation: reveal-up 700ms ease-out both;
+    }
+
+    @keyframes reveal-up {
+      from { opacity: 0; transform: translateY(14px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes status-pulse {
+      0% { box-shadow: 0 0 0 0 rgba(0, 212, 170, 0.6); }
+      70% { box-shadow: 0 0 0 10px rgba(0, 212, 170, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(0, 212, 170, 0); }
+    }
+
+    @keyframes value-pop {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.08); color: #ffffff; }
+      100% { transform: scale(1); }
+    }
+
+    @keyframes gesture-bump {
+      0% { transform: translateY(0); }
+      50% { transform: translateY(-3px); }
+      100% { transform: translateY(0); }
+    }
+
+    @keyframes drift {
+      from { transform: translate3d(-1%, -1%, 0) scale(1); }
+      to { transform: translate3d(1%, 1%, 0) scale(1.03); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation: none !important;
+        transition: none !important;
+      }
     }
   </style>
 </head>
@@ -165,6 +276,8 @@
     <span id="fps-display">0 fps</span>
     &nbsp;|&nbsp;
     <span id="latency-display">0 ms</span>
+    &nbsp;|&nbsp;
+    <button id="audio-enable-btn" class="audio-btn">Enable Sound</button>
   </div>
 </header>
 
@@ -213,11 +326,24 @@ const LANDMARK_COLOR = '#00d4aa';
 const BONE_COLOR = 'rgba(0, 212, 170, 0.4)';
 const ABSENT_COLOR = '#2a2a2a';
 
+// ─── Gesture audio mapping ─────────────────────────────────────────────────
+const GESTURE_SOUNDS = {
+  'fist': 262,         // C4
+  'open': 330,         // E4
+  'peace': 392,        // G4
+  'thumbs_up': 523,    // C5
+  'pointing': 659,     // E5
+  'none': 0,           // Silent
+};
+
 // ─── State ───────────────────────────────────────────────────────────────────
 let ws = null;
 let frameCount = 0;
 let lastFrameTime = performance.now();
 let fpsBuffer = [];
+let audioContext = null;
+let lastGesturePerHand = {};
+let lastSoundAt = {};
 
 // ─── DOM ─────────────────────────────────────────────────────────────────────
 const container = document.getElementById('hands-container');
@@ -225,12 +351,110 @@ const statusDot = document.getElementById('status-dot');
 const statusText = document.getElementById('status-text');
 const fpsDisplay = document.getElementById('fps-display');
 const latencyDisplay = document.getElementById('latency-display');
+const audioEnableBtn = document.getElementById('audio-enable-btn');
+
+// ─── Initialize audio context ──────────────────────────────────────────────
+function initAudio() {
+  if (audioContext) return audioContext;
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    audioContext = new AudioContext();
+    console.log('Audio context created:', audioContext.state);
+    return audioContext;
+  } catch (e) {
+    console.warn('Web Audio API not supported:', e);
+    return null;
+  }
+}
+
+function resumeAudio() {
+  const ctx = initAudio();
+  if (!ctx) return Promise.resolve(false);
+  if (ctx.state === 'suspended') {
+    return ctx.resume().then(() => {
+      console.log('Audio context resumed');
+      if (audioEnableBtn) {
+        audioEnableBtn.textContent = 'Sound On';
+        audioEnableBtn.classList.add('on');
+      }
+      return true;
+    }).catch(() => false);
+  }
+  if (audioEnableBtn) {
+    audioEnableBtn.textContent = 'Sound On';
+    audioEnableBtn.classList.add('on');
+  }
+  return Promise.resolve(true);
+}
+
+function playTone(freq, duration = 0.16, volume = 0.26) {
+  if (!audioContext || audioContext.state !== 'running') return;
+  const now = audioContext.currentTime;
+  const osc = audioContext.createOscillator();
+  const gain = audioContext.createGain();
+  const filter = audioContext.createBiquadFilter();
+
+  osc.type = 'sine';
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(volume, now);
+  gain.gain.exponentialRampToValueAtTime(0.01, now + duration);
+  filter.type = 'lowpass';
+  filter.frequency.value = freq * 2;
+
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(audioContext.destination);
+  osc.start(now);
+  osc.stop(now + duration);
+}
+
+function enableSound() {
+  resumeAudio().then((ok) => {
+    if (ok) {
+      // audible confirmation tone
+      playTone(880, 0.12, 0.22);
+    }
+  });
+}
+
+// ─── Play gesture sound ────────────────────────────────────────────────────
+function playGestureSound(handIdx, gesture) {
+  if (!audioContext) {
+    console.warn('Audio context not initialized');
+    return;
+  }
+  
+  if (audioContext.state === 'suspended') {
+    console.warn('Audio context suspended. Click on the page to enable sound.');
+    return;
+  }
+
+  if (!gesture || gesture === 'none') return;
+
+  const freq = GESTURE_SOUNDS[gesture];
+  if (!freq || freq === 0) return;
+
+  const nowMs = performance.now();
+  const key = `hand_${handIdx}`;
+  if (lastSoundAt[key] && (nowMs - lastSoundAt[key]) < 350) {
+    return;
+  }
+  lastSoundAt[key] = nowMs;
+
+  try {
+    console.log(`🔊 Playing gesture sound: ${gesture} (${freq}Hz)`);
+    playTone(freq);
+  } catch (e) {
+    console.error('Error playing gesture sound:', e);
+  }
+}
 
 // ─── Hand card builder ───────────────────────────────────────────────────────
 function createHandCard(idx) {
   const card = document.createElement('div');
   card.className = 'card';
   card.id = `hand-${idx}`;
+  card.style.animationDelay = `${idx * 120}ms`;
   card.innerHTML = `
     <h2>Hand ${idx} <span id="hand-${idx}-label" style="color:#555;font-size:0.7rem;margin-left:8px;">Not detected</span></h2>
     <canvas id="hand-${idx}-canvas" width="320" height="240"></canvas>
@@ -261,6 +485,17 @@ function createHandCard(idx) {
   return card;
 }
 
+function animateTextChange(el, nextText) {
+  if (!el) return;
+  const next = String(nextText);
+  if (el.textContent !== next) {
+    el.textContent = next;
+    el.classList.remove('value-pop');
+    void el.offsetWidth;
+    el.classList.add('value-pop');
+  }
+}
+
 function createFingerBars(handIdx, fingers) {
   const container = document.getElementById(`hand-${handIdx}-fingers`);
   if (!container) return;
@@ -280,7 +515,7 @@ function createFingerBars(handIdx, fingers) {
     const bar = document.getElementById(`hand-${handIdx}-ff-${f.name}`);
     const val = document.getElementById(`hand-${handIdx}-fv-${f.name}`);
     if (bar) bar.style.height = `${Math.round(f.flexion * 100)}%`;
-    if (val) val.textContent = f.flexion.toFixed(1);
+    if (val) animateTextChange(val, f.flexion.toFixed(1));
   });
 }
 
@@ -358,8 +593,29 @@ function updateHand(hand) {
 
   const gesture = document.getElementById(`hand-${idx}-gesture`);
   if (gesture) {
-    gesture.textContent = hand.present ? hand.discrete_gesture : '—';
+    const nextGesture = hand.present ? hand.discrete_gesture : '—';
+    if (gesture.textContent !== nextGesture) {
+      gesture.textContent = nextGesture;
+      // Play sound on gesture change if it's a valid gesture
+      if (hand.present && nextGesture !== '—') {
+        const prevGesture = lastGesturePerHand[`hand_${idx}`];
+        if (prevGesture !== hand.discrete_gesture) {
+          playGestureSound(idx, hand.discrete_gesture);
+          lastGesturePerHand[`hand_${idx}`] = hand.discrete_gesture;
+        }
+      }
+      gesture.classList.remove('flash');
+      void gesture.offsetWidth;
+      gesture.classList.add('flash');
+    }
     gesture.style.color = hand.present ? '#00d4aa' : '#333';
+  }
+
+  // Track gesture for next update
+  if (hand.present) {
+    lastGesturePerHand[`hand_${idx}`] = hand.discrete_gesture;
+  } else {
+    delete lastGesturePerHand[`hand_${idx}`];
   }
 
   // Metric bars
@@ -373,7 +629,7 @@ function updateHand(hand) {
     const bar = document.getElementById(`hand-${idx}-bar-${key}`);
     const val = document.getElementById(`hand-${idx}-val-${key}`);
     if (bar) bar.style.width = `${pct}%`;
-    if (val) val.textContent = raw.toFixed(2);
+    if (val) animateTextChange(val, raw.toFixed(2));
   });
 
   // Fingers
@@ -382,7 +638,7 @@ function updateHand(hand) {
   // Palm orientation
   ['roll', 'pitch', 'yaw'].forEach(axis => {
     const el = document.getElementById(`hand-${idx}-palm-${axis}`);
-    if (el) el.textContent = (hand[`palm_${axis}`] || 0).toFixed(2);
+    if (el) animateTextChange(el, (hand[`palm_${axis}`] || 0).toFixed(2));
   });
 }
 
@@ -396,12 +652,12 @@ function onFrame(frame) {
   fpsDisplay.textContent = `${fps} fps`;
   latencyDisplay.textContent = `${frame.latency_ms.toFixed(1)} ms`;
 
-  document.getElementById('stat-frames').textContent = frameCount;
-  document.getElementById('stat-latency').textContent = `${frame.latency_ms.toFixed(0)} ms`;
-  document.getElementById('stat-fps').textContent = fps;
+  animateTextChange(document.getElementById('stat-frames'), frameCount);
+  animateTextChange(document.getElementById('stat-latency'), `${frame.latency_ms.toFixed(0)} ms`);
+  animateTextChange(document.getElementById('stat-fps'), fps);
 
   const present = frame.hands.filter(h => h.present).length;
-  document.getElementById('stat-hands').textContent = present;
+  animateTextChange(document.getElementById('stat-hands'), present);
 
   frame.hands.forEach(hand => updateHand(hand));
 }
@@ -423,6 +679,7 @@ function connect() {
   ws.onopen = () => {
     statusDot.className = 'connected';
     statusText.textContent = 'Connected';
+    initAudio();
     // Keepalive ping every 10s
     setInterval(() => { if (ws.readyState === WebSocket.OPEN) ws.send('ping'); }, 10000);
   };
@@ -451,6 +708,9 @@ function connect() {
 
 // ─── Boot ─────────────────────────────────────────────────────────────────
 ensureHandCards(2);
+if (audioEnableBtn) {
+  audioEnableBtn.addEventListener('click', enableSound);
+}
 connect();
 </script>
 </body>
