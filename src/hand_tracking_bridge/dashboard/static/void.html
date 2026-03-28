@@ -3,485 +3,247 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Infinite Void — Hand Tracking Bridge</title>
+<title>Particle Void — Hand Tracking</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-/* ── Design tokens ─────────────────────────────────────────────────────────── */
 :root {
-  --bg:        #07080f;
-  --surface:   rgba(255,255,255,0.04);
-  --border:    rgba(255,255,255,0.08);
-  --accent:    #7c5aff;
-  --accent2:   #00d4ff;
-  --text:      #e8eaf0;
-  --muted:     #5a5e7a;
-  --danger:    #ff4466;
-  --nav-h:     52px;
-  --font:      'Inter', sans-serif;
-  --font-head: 'Space Grotesk', sans-serif;
-  --radius:    12px;
-  --glass:     blur(16px) saturate(180%);
+  --bg:      #03050e;
+  --surface: rgba(255,255,255,0.05);
+  --border:  rgba(255,255,255,0.09);
+  --accent:  #7c5aff;
+  --cyan:    #00d4ff;
+  --text:    #e8eaf0;
+  --muted:   #4a4e6a;
+  --danger:  #ff4466;
+  --glass:   blur(18px) saturate(160%);
+  --r:       10px;
+  --nav-h:   48px;
+  --panel-w: 220px;
+  --font:    'Inter', sans-serif;
+  --fhead:   'Space Grotesk', sans-serif;
 }
 
-/* ── Reset ─────────────────────────────────────────────────────────────────── */
-*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--font); }
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+html, body { width:100%; height:100%; overflow:hidden; background:var(--bg); color:var(--text); font-family:var(--font); }
 
-/* ── Nav ───────────────────────────────────────────────────────────────────── */
+/* ── Nav ── */
 #nav {
-  position: fixed; top: 0; left: 0; right: 0; height: var(--nav-h);
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0 24px; z-index: 200;
-  background: rgba(7,8,15,0.72); backdrop-filter: var(--glass);
-  border-bottom: 1px solid var(--border);
+  position:fixed; top:0; left:0; right:0; height:var(--nav-h); z-index:200;
+  display:flex; align-items:center; justify-content:space-between; padding:0 20px;
+  background:rgba(3,5,14,0.7); backdrop-filter:var(--glass);
+  border-bottom:1px solid var(--border);
 }
-#nav .logo { font-family: var(--font-head); font-size: 20px; font-weight: 700; color: var(--accent); letter-spacing: -0.5px; user-select: none; }
-#nav .logo span { color: var(--accent2); }
+#nav .logo { font-family:var(--fhead); font-size:18px; font-weight:700; color:var(--accent); letter-spacing:-0.5px; }
+#nav .logo span { color:var(--cyan); }
+#ws-dot { display:flex; align-items:center; gap:7px; font-size:11px; color:var(--muted); }
+#ws-dot .dot { width:7px; height:7px; border-radius:50%; background:var(--muted); transition:background .4s; }
+#ws-dot.ok  .dot { background:#4ade80; box-shadow:0 0 6px #4ade8088; }
+#ws-dot.err .dot { background:var(--danger); }
 
-.tab-pills { display: flex; gap: 4px; }
-.tab-pills button {
-  background: none; border: 1px solid transparent; color: var(--muted);
-  font-family: var(--font); font-size: 13px; font-weight: 500;
-  padding: 6px 16px; border-radius: 20px; cursor: pointer;
-  transition: all 0.2s;
+/* ── Canvas fills under nav ── */
+#canvas-wrap {
+  position:fixed; top:var(--nav-h); left:0; right:0; bottom:0;
 }
-.tab-pills button:hover  { color: var(--text); border-color: var(--border); }
-.tab-pills button.active { color: var(--text); background: var(--surface); border-color: var(--border); }
+#canvas-wrap canvas { display:block; }
 
-#ws-dot {
-  display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted);
+/* ── Side panels ── */
+.side-panel {
+  position:fixed; top:var(--nav-h); bottom:0; width:var(--panel-w);
+  z-index:100; padding:16px 14px;
+  display:flex; flex-direction:column; gap:12px;
+  pointer-events:none;
+  overflow:hidden;
 }
-#ws-dot .dot {
-  width: 7px; height: 7px; border-radius: 50%; background: var(--muted);
-  transition: background 0.4s;
-}
-#ws-dot.ok  .dot { background: #4ade80; box-shadow: 0 0 6px #4ade8088; }
-#ws-dot.err .dot { background: var(--danger); }
+#panel-left  { left:0; }
+#panel-right { right:0; }
 
-/* ── Tab panels ────────────────────────────────────────────────────────────── */
-.tab-panel {
-  position: fixed; inset: var(--nav-h) 0 0 0;
-  opacity: 0; pointer-events: none; transition: opacity 0.3s;
-  overflow: hidden;
+.panel-card {
+  background:rgba(3,5,14,0.72); backdrop-filter:var(--glass);
+  border:1px solid var(--border); border-radius:var(--r);
+  padding:12px 14px;
 }
-.tab-panel.active { opacity: 1; pointer-events: all; }
-
-/* ── Start overlay ─────────────────────────────────────────────────────────── */
-#overlay {
-  position: absolute; inset: 0; z-index: 100;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  background: rgba(7,8,15,0.85); backdrop-filter: blur(8px); cursor: pointer;
-  transition: opacity 0.6s;
-}
-#overlay h2 { font-family: var(--font-head); font-size: 2.2rem; font-weight: 700; color: var(--accent); margin-bottom: 12px; letter-spacing: -1px; }
-#overlay p  { font-size: 0.9rem; color: var(--muted); letter-spacing: 1px; }
-
-/* ── Void HUD ──────────────────────────────────────────────────────────────── */
-#void-hud {
-  position: absolute; top: 16px; left: 16px; z-index: 10;
-  display: flex; flex-direction: column; gap: 10px; pointer-events: none;
-}
-.hud-card {
-  background: var(--surface); backdrop-filter: var(--glass);
-  border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 10px 14px; min-width: 160px;
-}
-.hud-card .hud-label { font-size: 9px; font-weight: 600; letter-spacing: 2px; color: var(--muted); text-transform: uppercase; margin-bottom: 6px; }
-.hud-card .hud-row   { display: flex; justify-content: space-between; font-size: 11px; color: var(--text); margin-top: 3px; }
-.hud-card .hud-row span { color: var(--muted); }
-
-.hud-bar-wrap { margin-top: 5px; }
-.hud-bar-track { height: 3px; background: var(--border); border-radius: 2px; margin-top: 2px; }
-.hud-bar-fill  { height: 3px; border-radius: 2px; width: 0%; transition: width 0.1s; }
-.hud-bar-fill.pinch   { background: var(--accent); }
-.hud-bar-fill.openness{ background: var(--accent2); }
-
-#gesture-flash {
-  position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
-  font-size: 72px; opacity: 0; pointer-events: none; z-index: 10;
-  filter: drop-shadow(0 0 24px var(--accent));
-  transition: opacity 0.12s;
+.panel-card .card-title {
+  font-size:9px; font-weight:600; letter-spacing:2.5px; text-transform:uppercase;
+  color:var(--muted); margin-bottom:10px;
 }
 
-/* ── Controls hint ─────────────────────────────────────────────────────────── */
-#controls-hint {
-  position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
-  display: flex; gap: 20px; pointer-events: none; z-index: 10;
-}
-.hint-pill {
-  background: var(--surface); backdrop-filter: var(--glass);
-  border: 1px solid var(--border); border-radius: 20px;
-  padding: 5px 12px; font-size: 11px; color: var(--muted);
-  white-space: nowrap;
-}
-.hint-pill strong { color: var(--text); }
+/* hand rows */
+.hrow { display:flex; justify-content:space-between; font-size:11px; margin-top:5px; }
+.hrow .lbl { color:var(--muted); }
+.hrow .val { font-family:var(--fhead); font-weight:600; color:var(--text); }
+.bar-track { height:3px; background:rgba(255,255,255,0.08); border-radius:2px; margin-top:3px; }
+.bar-fill  { height:3px; border-radius:2px; width:0%; transition:width .09s; }
+.bf-pinch  { background:var(--accent); }
+.bf-open   { background:var(--cyan); }
 
-/* ── Studio tab ────────────────────────────────────────────────────────────── */
-#tab-studio {
-  display: grid; grid-template-columns: 260px 1fr 260px;
-  grid-template-rows: 1fr auto; height: 100%; background: var(--bg);
-}
-
-.studio-hand {
-  padding: 24px 20px; border-right: 1px solid var(--border);
-  display: flex; flex-direction: column; gap: 20px;
-}
-.studio-hand:last-child { border-right: none; border-left: 1px solid var(--border); }
-.studio-hand h3 {
-  font-family: var(--font-head); font-size: 11px; font-weight: 600;
-  letter-spacing: 3px; text-transform: uppercase; color: var(--muted);
-}
-
-.hand-absent { color: var(--muted); font-size: 12px; margin-top: 8px; }
-
-.metric-block { display: flex; flex-direction: column; gap: 6px; }
-.metric-label { font-size: 10px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
-.metric-val   { font-family: var(--font-head); font-size: 24px; font-weight: 600; color: var(--text); }
-.metric-bar   { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
-.metric-bar-fill { height: 100%; border-radius: 2px; transition: width 0.08s; }
-
+/* pos pad */
 .pos-pad {
-  width: 100%; aspect-ratio: 1; border: 1px solid var(--border);
-  border-radius: var(--radius); background: rgba(255,255,255,0.02);
-  position: relative; overflow: hidden;
+  width:100%; aspect-ratio:1; border:1px solid var(--border);
+  border-radius:var(--r); background:rgba(255,255,255,0.02);
+  position:relative; overflow:hidden; margin-top:8px;
 }
 .pos-dot {
-  width: 10px; height: 10px; border-radius: 50%;
-  position: absolute; transform: translate(-50%,-50%);
-  transition: left 0.08s, top 0.08s;
-  box-shadow: 0 0 12px currentColor;
+  width:9px; height:9px; border-radius:50%;
+  position:absolute; transform:translate(-50%,-50%);
+  transition:left .08s, top .08s;
+  box-shadow:0 0 10px currentColor;
 }
 
-.effect-row { display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
-.effect-row .eff-name { color: var(--muted); }
-.effect-row .eff-val  { font-family: var(--font-head); font-weight: 600; color: var(--text); }
+/* ── Studio controls (right panel) ── */
+.note-big {
+  font-family:var(--fhead); font-size:52px; font-weight:700; line-height:1;
+  text-align:center; color:var(--text);
+  text-shadow:0 0 30px var(--accent), 0 0 60px var(--cyan);
+  transition:color .1s;
+  margin:4px 0;
+}
+.note-sub { font-size:10px; color:var(--muted); text-align:center; letter-spacing:1px; }
+.note-freq { font-family:var(--fhead); font-size:12px; color:var(--cyan); text-align:center; margin-top:2px; }
 
-/* ── Studio center ─────────────────────────────────────────────────────────── */
-.studio-center {
-  display: flex; flex-direction: column; align-items: center;
-  justify-content: space-between; padding: 32px 24px 24px;
-  gap: 24px;
+.scale-pills { display:flex; flex-wrap:wrap; gap:5px; margin-top:8px; }
+.scale-pill {
+  background:none; border:1px solid var(--border); color:var(--muted);
+  font-family:var(--font); font-size:10px; font-weight:500;
+  padding:4px 9px; border-radius:20px; cursor:pointer; transition:all .18s;
+  pointer-events:all;
 }
+.scale-pill:hover  { color:var(--text); border-color:rgba(255,255,255,0.2); }
+.scale-pill.active { color:#fff; background:var(--accent); border-color:var(--accent); }
 
-.note-display {
-  text-align: center;
-  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+.oct-row {
+  display:flex; align-items:center; justify-content:center; gap:14px; margin-top:8px;
 }
-.note-name {
-  font-family: var(--font-head); font-size: 96px; font-weight: 700;
-  line-height: 1; color: var(--text);
-  text-shadow: 0 0 40px var(--accent), 0 0 80px var(--accent2);
-  transition: color 0.15s;
+.oct-btn {
+  width:28px; height:28px; border-radius:50%;
+  background:var(--surface); border:1px solid var(--border);
+  color:var(--text); font-size:16px; cursor:pointer; transition:all .15s;
+  display:flex; align-items:center; justify-content:center; pointer-events:all;
 }
-.note-sub  { font-size: 13px; color: var(--muted); margin-top: 8px; letter-spacing: 2px; }
-.note-freq { font-family: var(--font-head); font-size: 14px; color: var(--accent2); margin-top: 4px; }
+.oct-btn:hover { background:rgba(124,90,255,0.25); border-color:var(--accent); }
+.oct-lbl { font-size:9px; letter-spacing:2px; color:var(--muted); text-align:center; }
+.oct-val { font-family:var(--fhead); font-size:18px; font-weight:700; text-align:center; color:var(--text); }
 
-.scale-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
-.scale-btn {
-  background: var(--surface); border: 1px solid var(--border);
-  color: var(--muted); font-family: var(--font); font-size: 12px; font-weight: 500;
-  padding: 6px 14px; border-radius: 20px; cursor: pointer; transition: all 0.2s;
+#audio-btn {
+  width:100%; padding:8px; border-radius:20px; border:none;
+  background:var(--accent); color:#fff;
+  font-family:var(--font); font-size:12px; font-weight:600;
+  cursor:pointer; transition:opacity .2s; margin-top:8px;
+  pointer-events:all;
 }
-.scale-btn:hover  { color: var(--text); border-color: rgba(255,255,255,0.2); }
-.scale-btn.active { color: var(--text); background: var(--accent); border-color: var(--accent); }
+#audio-btn:disabled { opacity:0.4; }
 
-.octave-row { display: flex; align-items: center; gap: 16px; }
-.octave-btn {
-  width: 32px; height: 32px; border-radius: 50%;
-  background: var(--surface); border: 1px solid var(--border);
-  color: var(--text); font-size: 18px; cursor: pointer; transition: all 0.15s;
-  display: flex; align-items: center; justify-content: center;
-}
-.octave-btn:hover { background: rgba(124,90,255,0.2); border-color: var(--accent); }
-.octave-label { font-family: var(--font-head); font-size: 14px; color: var(--muted); }
-.octave-val   { font-family: var(--font-head); font-size: 20px; font-weight: 700; color: var(--text); }
-
-/* ── Waveform ──────────────────────────────────────────────────────────────── */
-#waveform-wrap {
-  width: 100%; padding: 0 4px;
-}
 #waveform {
-  width: 100%; height: 80px; display: block;
-  border-radius: var(--radius);
-  background: rgba(255,255,255,0.02); border: 1px solid var(--border);
+  width:100%; height:48px; display:block; margin-top:8px;
+  border-radius:var(--r); background:rgba(255,255,255,0.02);
+  border:1px solid var(--border);
 }
 
-/* ── About tab ─────────────────────────────────────────────────────────────── */
-#tab-about { overflow-y: auto; }
-.about-body {
-  max-width: 760px; margin: 0 auto; padding: 48px 32px 80px;
-  display: flex; flex-direction: column; gap: 56px;
+/* ── Orb scale readout ── */
+.orb-row { display:flex; justify-content:space-between; font-size:11px; }
+.orb-row .lbl { color:var(--muted); }
+.orb-row .val { font-family:var(--fhead); color:var(--cyan); font-weight:600; }
+
+/* ── Gesture flash ── */
+#gflash {
+  position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+  font-size:72px; opacity:0; pointer-events:none; z-index:150;
+  filter:drop-shadow(0 0 20px var(--accent));
+  transition:opacity .12s;
 }
 
-.about-hero { text-align: center; }
-.about-hero h1 {
-  font-family: var(--font-head); font-size: 3.5rem; font-weight: 700;
-  background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  margin-bottom: 16px;
+/* ── Bottom hints ── */
+#hints {
+  position:fixed; bottom:14px; left:50%; transform:translateX(-50%);
+  display:flex; gap:14px; pointer-events:none; z-index:100;
 }
-.about-hero p { font-size: 1.1rem; color: var(--muted); line-height: 1.7; max-width: 500px; margin: 0 auto; }
-
-.about-section h2 {
-  font-family: var(--font-head); font-size: 1.4rem; font-weight: 600;
-  color: var(--text); margin-bottom: 20px;
-  padding-bottom: 12px; border-bottom: 1px solid var(--border);
+.hint {
+  background:rgba(3,5,14,0.72); backdrop-filter:var(--glass);
+  border:1px solid var(--border); border-radius:20px;
+  padding:4px 11px; font-size:10px; color:var(--muted); white-space:nowrap;
 }
-.about-section p  { color: var(--muted); line-height: 1.75; font-size: 0.95rem; }
-.about-section p + p { margin-top: 12px; }
+.hint strong { color:var(--text); }
 
-.pipeline-diagram {
-  font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.8;
-  color: var(--accent2); background: rgba(0,212,255,0.04);
-  border: 1px solid rgba(0,212,255,0.15); border-radius: var(--radius);
-  padding: 20px 24px; overflow-x: auto; white-space: pre;
+/* ── Start overlay ── */
+#overlay {
+  position:fixed; inset:0; z-index:300;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  background:rgba(3,5,14,0.88); backdrop-filter:blur(8px); cursor:pointer;
+  transition:opacity .6s;
 }
-
-.gesture-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
-.gesture-card {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 16px;
-  display: flex; flex-direction: column; gap: 8px;
-}
-.gesture-card .g-emoji  { font-size: 28px; }
-.gesture-card .g-name   { font-family: var(--font-head); font-size: 13px; font-weight: 600; color: var(--text); }
-.gesture-card .g-void   { font-size: 11px; color: var(--accent); }
-.gesture-card .g-studio { font-size: 11px; color: var(--accent2); }
-
-.ref-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.ref-table th { text-align: left; padding: 8px 12px; font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--border); }
-.ref-table td { padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.04); color: var(--muted); }
-.ref-table td:first-child { color: var(--text); font-weight: 500; }
-
-.code-block {
-  background: rgba(124,90,255,0.08); border: 1px solid rgba(124,90,255,0.2);
-  border-radius: var(--radius); padding: 16px 20px;
-  font-family: 'Courier New', monospace; font-size: 13px; color: var(--accent);
-}
+#overlay h2 { font-family:var(--fhead); font-size:2.2rem; font-weight:700; color:var(--accent); margin-bottom:10px; letter-spacing:-1px; }
+#overlay p  { font-size:.9rem; color:var(--muted); letter-spacing:1px; }
 </style>
 </head>
 <body>
 
-<!-- ── Navigation ──────────────────────────────────────────────────────────── -->
+<!-- Start overlay -->
+<div id="overlay">
+  <h2>Particle Void</h2>
+  <p>Click to begin · Show hands to camera</p>
+</div>
+
+<!-- Nav -->
 <nav id="nav">
-  <div class="logo">∞ <span>VOID</span></div>
-  <div class="tab-pills">
-    <button class="active" data-tab="void">Void</button>
-    <button data-tab="studio">Studio</button>
-    <button data-tab="about">About</button>
+  <div class="logo">◎ <span>PARTICLE</span> VOID</div>
+  <div style="display:flex;gap:4px;">
+    <a href="/" style="background:none;border:1px solid var(--border);color:var(--muted);font-family:var(--font);font-size:13px;font-weight:500;padding:5px 16px;border-radius:20px;cursor:pointer;text-decoration:none;transition:all .18s;" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">Dashboard</a>
+    <a href="/void" style="color:var(--text);background:var(--surface);border:1px solid var(--border);font-family:var(--font);font-size:13px;font-weight:500;padding:5px 16px;border-radius:20px;cursor:pointer;text-decoration:none;">Particle Void</a>
   </div>
-  <div id="ws-dot"><div class="dot"></div><span id="ws-label">connecting</span></div>
+  <div id="ws-dot"><div class="dot"></div><span id="ws-lbl">connecting</span></div>
 </nav>
 
-<!-- ── VOID tab ─────────────────────────────────────────────────────────────── -->
-<div id="tab-void" class="tab-panel active">
+<!-- Canvas -->
+<div id="canvas-wrap"></div>
 
-  <div id="overlay">
-    <h2>∞ Infinite Void</h2>
-    <p>Click anywhere to begin · Show hands to camera</p>
+<!-- Left: hand tracking -->
+<div class="side-panel" id="panel-left">
+
+  <div class="panel-card" id="card-h0">
+    <div class="card-title">Hand 0</div>
+    <div class="pos-pad" id="h0-pad">
+      <div class="pos-dot" id="h0-dot" style="color:var(--accent); left:50%; top:50%;"></div>
+    </div>
+    <div class="hrow"><span class="lbl">Pinch</span><span class="val" id="h0-pinch">—</span></div>
+    <div class="bar-track"><div class="bar-fill bf-pinch" id="h0-pinch-bar"></div></div>
+    <div class="hrow"><span class="lbl">Open</span><span class="val" id="h0-open">—</span></div>
+    <div class="bar-track"><div class="bar-fill bf-open" id="h0-open-bar"></div></div>
+    <div class="hrow"><span class="lbl">Gesture</span><span class="val" id="h0-gest">—</span></div>
   </div>
 
-  <!-- HUD -->
-  <div id="void-hud">
-    <div class="hud-card" id="hud-h0">
-      <div class="hud-label">Hand 0</div>
-      <div class="hud-row"><span>Pinch</span><span id="h0-pinch">—</span></div>
-      <div class="hud-bar-wrap"><div class="hud-bar-track"><div class="hud-bar-fill pinch" id="h0-pinch-bar"></div></div></div>
-      <div class="hud-row"><span>Open</span><span id="h0-open">—</span></div>
-      <div class="hud-bar-wrap"><div class="hud-bar-track"><div class="hud-bar-fill openness" id="h0-open-bar"></div></div></div>
-      <div class="hud-row"><span>Gesture</span><span id="h0-gest">—</span></div>
+  <div class="panel-card" id="card-h1">
+    <div class="card-title">Hand 1</div>
+    <div class="pos-pad" id="h1-pad">
+      <div class="pos-dot" id="h1-dot" style="color:var(--cyan); left:50%; top:50%;"></div>
     </div>
-    <div class="hud-card" id="hud-h1">
-      <div class="hud-label">Hand 1</div>
-      <div class="hud-row"><span>Pinch</span><span id="h1-pinch">—</span></div>
-      <div class="hud-bar-wrap"><div class="hud-bar-track"><div class="hud-bar-fill pinch" id="h1-pinch-bar"></div></div></div>
-      <div class="hud-row"><span>Open</span><span id="h1-open">—</span></div>
-      <div class="hud-bar-wrap"><div class="hud-bar-track"><div class="hud-bar-fill openness" id="h1-open-bar"></div></div></div>
-      <div class="hud-row"><span>Gesture</span><span id="h1-gest">—</span></div>
-    </div>
+    <div class="hrow"><span class="lbl">Pinch</span><span class="val" id="h1-pinch">—</span></div>
+    <div class="bar-track"><div class="bar-fill bf-pinch" id="h1-pinch-bar"></div></div>
+    <div class="hrow"><span class="lbl">Open</span><span class="val" id="h1-open">—</span></div>
+    <div class="bar-track"><div class="bar-fill bf-open" id="h1-open-bar"></div></div>
+    <div class="hrow"><span class="lbl">Gesture</span><span class="val" id="h1-gest">—</span></div>
   </div>
 
-  <div id="gesture-flash"></div>
-
-  <div id="controls-hint">
-    <div class="hint-pill"><strong>✊ fist</strong> spawn</div>
-    <div class="hint-pill"><strong>🖐 open</strong> explode</div>
-    <div class="hint-pill"><strong>pinch</strong> grab &amp; move</div>
-    <div class="hint-pill"><strong>palm tilt</strong> rotate</div>
-    <div class="hint-pill"><strong>2 hands</strong> scale</div>
-  </div>
-</div>
-
-<!-- ── STUDIO tab ───────────────────────────────────────────────────────────── -->
-<div id="tab-studio" class="tab-panel">
-
-  <!-- Left hand panel (effects) -->
-  <div class="studio-hand" id="studio-left">
-    <h3>Left Hand · Effects</h3>
-    <p class="hand-absent" id="lh-absent">No hand detected</p>
-
-    <div class="metric-block">
-      <div class="metric-label">Position</div>
-      <div class="pos-pad" id="lh-pad">
-        <div class="pos-dot" id="lh-dot" style="color:#00d4ff; left:50%; top:50%;"></div>
-      </div>
-    </div>
-
-    <div class="metric-block">
-      <div class="metric-label">Reverb</div>
-      <div class="metric-val" id="lh-reverb">0%</div>
-      <div class="metric-bar"><div class="metric-bar-fill" id="lh-reverb-bar" style="background:var(--accent2); width:0%"></div></div>
-    </div>
-
-    <div class="metric-block">
-      <div class="metric-label">Delay feedback</div>
-      <div class="metric-val" id="lh-delay">0%</div>
-      <div class="metric-bar"><div class="metric-bar-fill" id="lh-delay-bar" style="background:#a78bfa; width:0%"></div></div>
-    </div>
-
-    <div class="metric-block">
-      <div class="metric-label">Vibrato</div>
-      <div class="metric-val" id="lh-vib">0%</div>
-      <div class="metric-bar"><div class="metric-bar-fill" id="lh-vib-bar" style="background:#f472b6; width:0%"></div></div>
-    </div>
-  </div>
-
-  <!-- Center panel -->
-  <div class="studio-center">
-    <div class="note-display">
-      <div class="note-name" id="note-name">—</div>
-      <div class="note-sub"  id="note-sub">Show right hand to play</div>
-      <div class="note-freq" id="note-freq"></div>
-    </div>
-
-    <div class="octave-row">
-      <button class="octave-btn" id="oct-down">−</button>
-      <div>
-        <div class="octave-label">Octave</div>
-        <div class="octave-val"  id="oct-val">4</div>
-      </div>
-      <button class="octave-btn" id="oct-up">+</button>
-    </div>
-
-    <div class="scale-row" id="scale-row">
-      <!-- filled by JS -->
-    </div>
-
-    <div id="waveform-wrap">
-      <canvas id="waveform"></canvas>
-    </div>
-
-    <button id="audio-btn" style="
-      background:var(--accent); border:none; color:#fff; font-family:var(--font);
-      font-size:13px; font-weight:600; padding:10px 20px; border-radius:20px;
-      cursor:pointer; letter-spacing:0.5px; width:100%; transition:opacity 0.2s;
-    ">🔊 Enable Audio</button>
-  </div>
-
-  <!-- Right hand panel (melody) -->
-  <div class="studio-hand" id="studio-right">
-    <h3>Right Hand · Melody</h3>
-    <p class="hand-absent" id="rh-absent">No hand detected</p>
-
-    <div class="metric-block">
-      <div class="metric-label">Position</div>
-      <div class="pos-pad" id="rh-pad">
-        <div class="pos-dot" id="rh-dot" style="color:var(--accent); left:50%; top:50%;"></div>
-      </div>
-    </div>
-
-    <div class="metric-block">
-      <div class="metric-label">Filter cutoff</div>
-      <div class="metric-val" id="rh-filter">—</div>
-      <div class="metric-bar"><div class="metric-bar-fill" id="rh-filter-bar" style="background:var(--accent); width:0%"></div></div>
-    </div>
-
-    <div class="metric-block">
-      <div class="metric-label">Pinch · trigger</div>
-      <div class="metric-val" id="rh-pinch">—</div>
-      <div class="metric-bar"><div class="metric-bar-fill" id="rh-pinch-bar" style="background:#fb923c; width:0%"></div></div>
-    </div>
-
-    <div class="metric-block">
-      <div class="metric-label">Gesture → Scale</div>
-      <div class="metric-val" id="rh-gest-studio" style="font-size:16px">—</div>
-    </div>
-  </div>
-</div>
-
-<!-- ── ABOUT tab ─────────────────────────────────────────────────────────────── -->
-<div id="tab-about" class="tab-panel">
-<div class="about-body">
-
-  <div class="about-hero about-section">
-    <h1>Infinite Void</h1>
-    <p>Real-time hand tracking pipeline that turns your hands into instruments — control 3D objects, synthesize music, and interact with digital space, all without touching a single button.</p>
-  </div>
-
-  <div class="about-section">
-    <h2>How it works</h2>
-    <p>Your webcam feeds into a MediaPipe hand landmarker that extracts 21 3D keypoints per hand at ~30 FPS. A gesture engine computes pinch, openness, palm orientation, finger flexion, and velocity — all smoothed with a One Euro filter to eliminate jitter. The pipeline streams this data via WebSocket into your browser in real time.</p>
-    <div class="pipeline-diagram" style="margin-top:20px">Webcam → MediaPipe Tasks → Gesture Engine → One Euro Filter
-                                         ↓
-                              WebSocket /ws → Browser
-                                    ↙            ↘
-                             Void (Three.js)   Studio (Web Audio)</div>
-  </div>
-
-  <div class="about-section">
-    <h2>Gesture Reference</h2>
-    <div class="gesture-grid">
-      <div class="gesture-card"><div class="g-emoji">✊</div><div class="g-name">Fist</div><div class="g-void">Void: spawn object</div><div class="g-studio">Studio: octave down</div></div>
-      <div class="gesture-card"><div class="g-emoji">🖐</div><div class="g-name">Open Palm</div><div class="g-void">Void: explode nearby</div><div class="g-studio">Studio: next scale</div></div>
-      <div class="gesture-card"><div class="g-emoji">✌️</div><div class="g-name">Peace</div><div class="g-void">Void: (flash)</div><div class="g-studio">Studio: prev scale</div></div>
-      <div class="gesture-card"><div class="g-emoji">👆</div><div class="g-name">Pointing</div><div class="g-void">Void: (flash)</div><div class="g-studio">Studio: —</div></div>
-      <div class="gesture-card"><div class="g-emoji">👍</div><div class="g-name">Thumbs Up</div><div class="g-void">Void: (flash)</div><div class="g-studio">Studio: octave up</div></div>
-    </div>
-  </div>
-
-  <div class="about-section">
-    <h2>Void Controls</h2>
-    <table class="ref-table">
-      <thead><tr><th>Input</th><th>Action</th></tr></thead>
-      <tbody>
-        <tr><td>Wrist position</td><td>Moves the glowing hand cursor in 3D space</td></tr>
-        <tr><td>Pinch &gt; 0.7</td><td>Grabs the nearest object within reach</td></tr>
-        <tr><td>Move while pinching</td><td>Drags the object smoothly (spring physics)</td></tr>
-        <tr><td>Palm tilt</td><td>Rotates the grabbed object on all axes</td></tr>
-        <tr><td>Openness</td><td>Scales the object you are holding</td></tr>
-        <tr><td>Release with velocity</td><td>Throws / flings the object</td></tr>
-        <tr><td>Two hands</td><td>Distance between wrists scales the object</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <div class="about-section">
-    <h2>Studio Controls</h2>
-    <table class="ref-table">
-      <thead><tr><th>Hand</th><th>Input</th><th>Effect</th></tr></thead>
-      <tbody>
-        <tr><td>Right</td><td>Wrist Y</td><td>Selects note from scale (top = high, bottom = low)</td></tr>
-        <tr><td>Right</td><td>Pinch</td><td>Triggers a note — hold to sustain</td></tr>
-        <tr><td>Right</td><td>Openness</td><td>Filter brightness (dark → bright)</td></tr>
-        <tr><td>Left</td><td>Wrist Y</td><td>Reverb wet amount (lower hand = more reverb)</td></tr>
-        <tr><td>Left</td><td>Openness</td><td>Delay feedback (sustain / echo)</td></tr>
-        <tr><td>Left</td><td>Palm roll</td><td>Vibrato depth</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <div class="about-section">
-    <h2>Quick Setup</h2>
-    <div class="code-block">pip install -e ".[dashboard]"
-hand-tracker --dashboard</div>
-    <p style="margin-top:16px">Then open <strong style="color:var(--accent2)">http://localhost:8000/void</strong> in your browser. Click once to unlock audio, then show your hands.</p>
+  <div class="panel-card">
+    <div class="card-title">Orb</div>
+    <div class="orb-row"><span class="lbl">Scale</span><span class="val" id="orb-scale">1.00×</span></div>
   </div>
 
 </div>
+
+<!-- Studio panel removed -->
+
+<!-- Gesture flash -->
+<div id="gflash"></div>
+
+<!-- Bottom hints -->
+<div id="hints">
+  <div class="hint"><strong>2 hands</strong> spread / pinch to zoom</div>
+  <div class="hint"><strong>1 hand</strong> move to rotate</div>
+  <div class="hint"><strong>pinch</strong> compress</div>
+  <div class="hint"><strong>🖐 open</strong> burst</div>
+  <div class="hint"><strong>✊ fist</strong> implode</div>
 </div>
 
-<!-- ── Scripts ──────────────────────────────────────────────────────────────── -->
 <script type="importmap">
 {
   "imports": {
@@ -497,178 +259,228 @@ import { RenderPass }      from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass }      from 'three/addons/postprocessing/OutputPass.js';
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// ─── Config ───────────────────────────────────────────────────────────────────
 const CFG = {
-  grab:    { radius: 1.8, on: 0.68, off: 0.32 },
-  spring:  { k: 0.16, damp: 0.74 },
-  physics: { drag: 0.97, maxVel: 0.28 },
-  world:   { x: [-5.5, 5.5], y: [-3.5, 3.5] },
+  orb:     { mainR: 1.8, innerR: 0.50, ringR: 2.4, ringW: 0.20 },
+  counts:  { main: 4000, inner: 600, ring: 900 },
   smooth:  { pos: 0.09, pinch: 0.13, orient: 0.07, open: 0.09 },
-  bloom:   { strength: 1.4, radius: 0.5, threshold: 0.0 },
-  maxObj:  20,
+  bloom:   { strength: 0.30, radius: 0.20, threshold: 0.22 },
+  physics: { restore: 0.12, breatheAmp: 0.003, drift: 0.88 },
+  world:   { x: [-5, 5], y: [-3, 3] },
 };
+const TOTAL = CFG.counts.main + CFG.counts.inner + CFG.counts.ring;
+const GESTURE_EMOJI = { fist:'✊', open:'🖐', peace:'✌️', pointing:'☝️', thumbs_up:'👍' };
 
-const GLOW_COLORS = [0x7c5aff, 0x00d4ff, 0xff5a9d, 0xf59e0b, 0x34d399, 0xfb923c, 0xa78bfa];
-const GESTURE_EMOJI = { closed_fist:'✊', open_palm:'🖐', peace:'✌️', pointing:'☝️', thumbs_up:'👍' };
-
-// ─── Smooth value ─────────────────────────────────────────────────────────────
-class SmoothVal {
-  constructor(alpha) { this._a = alpha; this._v = null; }
-  push(x) { return (this._v === null) ? (this._v = x) : (this._v += (x - this._v) * this._a); }
+// ─── Smoother ─────────────────────────────────────────────────────────────────
+class SV {
+  constructor(a) { this._a = a; this._v = null; }
+  push(x) { return this._v === null ? (this._v = x) : (this._v += (x - this._v) * this._a); }
   get()   { return this._v ?? 0; }
   reset() { this._v = null; }
 }
 
-// ─── Tab system ───────────────────────────────────────────────────────────────
-let activeTab = 'void';
-document.querySelectorAll('.tab-pills button').forEach(btn => {
-  btn.addEventListener('click', () => {
-    activeTab = btn.dataset.tab;
-    document.querySelectorAll('.tab-pills button').forEach(b => b.classList.toggle('active', b === btn));
-    document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === `tab-${activeTab}`));
-  });
-});
-
 // ─── WebSocket ────────────────────────────────────────────────────────────────
 let latestFrame = null;
-const wsDot   = document.getElementById('ws-dot');
-const wsLabel = document.getElementById('ws-label');
-
+const wsDot = document.getElementById('ws-dot');
+const wsLbl = document.getElementById('ws-lbl');
 function connectWS() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const ws    = new WebSocket(`${proto}//${location.host}/ws`);
-  ws.onopen    = () => { wsDot.className = 'ok';  wsLabel.textContent = 'live'; };
-  ws.onclose   = () => { wsDot.className = 'err'; wsLabel.textContent = 'disconnected'; setTimeout(connectWS, 2000); };
-  ws.onerror   = () => { wsDot.className = 'err'; wsLabel.textContent = 'error'; };
-  ws.onmessage = e  => { try { latestFrame = JSON.parse(e.data); } catch {} };
+  const ws = new WebSocket(`${proto}//${location.host}/ws`);
+  ws.onopen    = () => { wsDot.className = 'ok';  wsLbl.textContent = 'live'; };
+  ws.onclose   = () => { wsDot.className = 'err'; wsLbl.textContent = 'offline'; setTimeout(connectWS, 2000); };
+  ws.onerror   = () => { wsDot.className = 'err'; wsLbl.textContent = 'error'; };
+  ws.onmessage = e => { try { latestFrame = JSON.parse(e.data); } catch {} };
   setInterval(() => { if (ws.readyState === 1) ws.send('ping'); }, 15000);
 }
 connectWS();
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  VOID — Three.js scene
-// ─────────────────────────────────────────────────────────────────────────────
-const voidPanel = document.getElementById('tab-void');
+// ─── Three.js scene ───────────────────────────────────────────────────────────
+const W = () => window.innerWidth;
+const H = () => window.innerHeight - 48;
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setSize(window.innerWidth, window.innerHeight - 52);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(W(), H());
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
+renderer.toneMappingExposure = 1.1;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
-voidPanel.appendChild(renderer.domElement);
+document.getElementById('canvas-wrap').appendChild(renderer.domElement);
 
-const scene  = new THREE.Scene();
-scene.fog    = new THREE.FogExp2(0x07080f, 0.016);
+const scene = new THREE.Scene();
+scene.fog   = new THREE.FogExp2(0x03050e, 0.010);
 
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth / (window.innerHeight - 52), 0.1, 200);
+const camera = new THREE.PerspectiveCamera(55, W() / H(), 0.1, 200);
 camera.position.set(0, 0, 12);
 
-// Post-processing: bloom
-const composer   = new EffectComposer(renderer);
-const renderPass = new RenderPass(scene, camera);
-const bloomPass  = new UnrealBloomPass(
-  new THREE.Vector2(window.innerWidth, window.innerHeight - 52),
+const composer  = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(W(), H()),
   CFG.bloom.strength, CFG.bloom.radius, CFG.bloom.threshold,
 );
-composer.addPass(renderPass);
 composer.addPass(bloomPass);
 composer.addPass(new OutputPass());
 
-// Lights
-scene.add(new THREE.AmbientLight(0x1a1a3e, 2.0));
-const handLights = [
-  new THREE.PointLight(0x9966ff, 0, 14),
-  new THREE.PointLight(0x00ccff, 0, 14),
-];
-handLights.forEach(l => scene.add(l));
+scene.add(new THREE.AmbientLight(0x0a1040, 1.8));
 
 // Stars
-(function() {
+(function(){
   const geo = new THREE.BufferGeometry();
-  const pos = new Float32Array(1000 * 3);
-  for (let i = 0; i < 1000; i++) {
-    const t = Math.random() * Math.PI * 2, p = Math.acos(2 * Math.random() - 1), r = 20 + Math.random() * 30;
-    pos[i*3]   = r * Math.sin(p) * Math.cos(t);
-    pos[i*3+1] = r * Math.sin(p) * Math.sin(t);
-    pos[i*3+2] = r * Math.cos(p);
+  const pos = new Float32Array(1400 * 3);
+  for (let i = 0; i < 1400; i++) {
+    const t = Math.random()*Math.PI*2, p = Math.acos(2*Math.random()-1), r = 22+Math.random()*30;
+    pos[i*3]   = r*Math.sin(p)*Math.cos(t);
+    pos[i*3+1] = r*Math.sin(p)*Math.sin(t);
+    pos[i*3+2] = r*Math.cos(p);
   }
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  scene.add(new THREE.Points(geo, new THREE.PointsMaterial({ color: 0x8899cc, size: 0.1, sizeAttenuation: true })));
+  scene.add(new THREE.Points(geo, new THREE.PointsMaterial({ color:0x556699, size:0.07, sizeAttenuation:true })));
 })();
 
-// Floating objects
-const floatingObjs = [];
-const GEOMETRIES = [
-  () => new THREE.SphereGeometry(0.52, 32, 32),
-  () => new THREE.TorusGeometry(0.48, 0.16, 16, 60),
-  () => new THREE.BoxGeometry(0.85, 0.85, 0.85),
-  () => new THREE.IcosahedronGeometry(0.58, 1),
-  () => new THREE.OctahedronGeometry(0.62, 0),
-  () => new THREE.TorusKnotGeometry(0.38, 0.12, 100, 16),
-];
+// ─── Particle orb buffers ─────────────────────────────────────────────────────
+const basePos = new Float32Array(TOTAL * 3);
+const currPos = new Float32Array(TOTAL * 3);
+const currVel = new Float32Array(TOTAL * 3);
+const pColors = new Float32Array(TOTAL * 3);
+const pSizes  = new Float32Array(TOTAL);
+const phases  = new Float32Array(TOTAL);
 
-function makeMat(color) {
-  return new THREE.MeshStandardMaterial({
-    color, emissive: color, emissiveIntensity: 0.6,
-    roughness: 0.15, metalness: 0.85,
-    transparent: true, opacity: 0.92,
-  });
+function rndSph(r) {
+  const t = Math.random()*Math.PI*2, p = Math.acos(2*Math.random()-1);
+  return [r*Math.sin(p)*Math.cos(t), r*Math.sin(p)*Math.sin(t), r*Math.cos(p)];
 }
 
-function spawnObject(pos) {
-  if (floatingObjs.length >= CFG.maxObj) return null;
-  const idx   = floatingObjs.length;
-  const color = GLOW_COLORS[idx % GLOW_COLORS.length];
-  const mesh  = new THREE.Mesh(GEOMETRIES[idx % GEOMETRIES.length](), makeMat(color));
-  mesh.position.copy(pos || new THREE.Vector3(
-    (Math.random() - 0.5) * 9, (Math.random() - 0.5) * 5.5, (Math.random() - 0.5) * 1.5,
-  ));
-  mesh.userData = {
-    vel:       new THREE.Vector3((Math.random()-.5)*.008, (Math.random()-.5)*.008, 0),
-    springVel: new THREE.Vector3(),
-    rotSpd:    new THREE.Vector3((Math.random()-.5)*.01, (Math.random()-.5)*.01, 0),
-    floatOff:  Math.random() * Math.PI * 2,
-    baseScale: 1, grabbed: false,
-  };
-  scene.add(mesh);
-  floatingObjs.push(mesh);
-  return mesh;
-}
-for (let i = 0; i < 6; i++) spawnObject(null);
+for (let i = 0; i < TOTAL; i++) {
+  let x,y,z, r,g,b, sz;
 
-// Hand cursors (torus rings)
-const cursors = [0x9966ff, 0x00ccff].map(color => {
+  if (i < CFG.counts.main) {
+    // Outer sphere: deep blue -> cyan top-to-bottom
+    const rad = CFG.orb.mainR * (0.88 + Math.random()*0.16);
+    [x,y,z] = rndSph(rad);
+    const t = (y/rad + 1)*0.5;
+    r = 0.02 + 0.06*t;
+    g = 0.28 + 0.52*t;
+    b = 0.88 + 0.12*t;
+    sz = 0.8 + Math.random()*1.2;  // 0.8-2.0
+
+  } else if (i < CFG.counts.main + CFG.counts.inner) {
+    // Inner core: bright white-blue
+    const rad = CFG.orb.innerR * (0.1 + Math.random()*0.9);
+    [x,y,z] = rndSph(rad);
+    r = 0.5 + Math.random()*0.5;
+    g = 0.75 + Math.random()*0.25;
+    b = 1.0;
+    sz = 0.5 + Math.random()*1.0;  // 0.5-1.5
+
+  } else {
+    // Equatorial ring: teal/cyan
+    const theta = Math.random()*Math.PI*2;
+    const radVar = CFG.orb.ringR + (Math.random()-0.5)*CFG.orb.ringW*2;
+    x = radVar*Math.cos(theta);
+    y = (Math.random()-0.5)*CFG.orb.ringW*0.5;
+    z = radVar*Math.sin(theta);
+    r = 0.0;
+    g = 0.80 + Math.random()*0.20;
+    b = 0.70 + Math.random()*0.30;
+    sz = 0.6 + Math.random()*0.9;  // 0.6-1.5
+  }
+
+  const idx = i*3;
+  basePos[idx]   = currPos[idx]   = x;
+  basePos[idx+1] = currPos[idx+1] = y;
+  basePos[idx+2] = currPos[idx+2] = z;
+  pColors[idx] = r; pColors[idx+1] = g; pColors[idx+2] = b;
+  pSizes[i] = sz;
+  phases[i] = Math.random()*Math.PI*2;
+}
+
+const orbGeo = new THREE.BufferGeometry();
+orbGeo.setAttribute('position', new THREE.BufferAttribute(currPos, 3));
+orbGeo.setAttribute('aColor',   new THREE.BufferAttribute(pColors, 3));
+orbGeo.setAttribute('aSize',    new THREE.BufferAttribute(pSizes, 1));
+
+// Shader: soft glowing circle per particle, size in world-space units
+const orbMat = new THREE.ShaderMaterial({
+  vertexShader: `
+    attribute float aSize;
+    attribute vec3  aColor;
+    varying   vec3  vColor;
+    void main() {
+      vColor = aColor;
+      vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      gl_PointSize = aSize * (96.0 / -mv.z);
+      gl_Position  = projectionMatrix * mv;
+    }
+  `,
+  fragmentShader: `
+    varying vec3 vColor;
+    void main() {
+      float d = length(gl_PointCoord - 0.5);
+      if (d > 0.5) discard;
+      float a = smoothstep(0.5, 0.28, d) * 0.92;
+      gl_FragColor = vec4(vColor, a);
+    }
+  `,
+  transparent: true,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+});
+
+const orbGroup = new THREE.Group();
+scene.add(orbGroup);
+orbGroup.add(new THREE.Points(orbGeo, orbMat));
+
+// Tiny central core
+const coreMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(0.14, 24, 24),
+  new THREE.MeshStandardMaterial({
+    color: 0x0044ff, emissive: 0x0033cc, emissiveIntensity: 0.7,
+    transparent: true, opacity: 0.20, roughness: 0.05, metalness: 0.9,
+  }),
+);
+orbGroup.add(coreMesh);
+
+const orbLight = new THREE.PointLight(0x0066ff, 0.5, 5);
+orbGroup.add(orbLight);
+
+// Orb state
+const orbState = {
+  scale: 1.0, targetScale: 1.0,
+  rotVelX: 0, rotVelY: 0.0004,
+  handsPresent: false, bothPresent: false,
+  explodeStr: 0, implodeStr: 0,
+  refDist: -1, refScale: 1.0,
+  prevGestures: ['', ''],
+  dominantGesture: 'none',
+};
+
+// Hand cursors
+const cursors = [0xaa66ff, 0x00ddff].map(color => {
   const m = new THREE.Mesh(
-    new THREE.TorusGeometry(0.22, 0.025, 8, 40),
-    new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 3.0, roughness: 0.1, metalness: 0.5 }),
+    new THREE.TorusGeometry(0.10, 0.012, 8, 32),
+    new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 3.5, roughness:0.1, metalness:0.5 }),
   );
   m.visible = false;
   scene.add(m);
   return m;
 });
 
-// Grab lines
-const grabLines = [0, 1].map(() => {
-  const geo  = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
-  const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0 }));
-  scene.add(line);
-  return line;
+const handLights = [0xaa66ff, 0x00ddff].map(c => {
+  const l = new THREE.PointLight(c, 0, 6);
+  scene.add(l);
+  return l;
 });
 
 // ─── Hand state ───────────────────────────────────────────────────────────────
 function makeHS() {
   return {
     present: false,
-    sx: new SmoothVal(CFG.smooth.pos),   sy: new SmoothVal(CFG.smooth.pos),
-    sp: new SmoothVal(CFG.smooth.pinch), so: new SmoothVal(CFG.smooth.open),
-    sr: new SmoothVal(CFG.smooth.orient),sch: new SmoothVal(CFG.smooth.orient),
-    sy2: new SmoothVal(CFG.smooth.orient),
+    sx: new SV(CFG.smooth.pos), sy: new SV(CFG.smooth.pos),
+    sp: new SV(CFG.smooth.pinch), so: new SV(CFG.smooth.open),
+    sr: new SV(CFG.smooth.orient), sch: new SV(CFG.smooth.orient), sy2: new SV(CFG.smooth.orient),
     worldPos: new THREE.Vector3(),
     pinch: 0, openness: 0, velX: 0, velY: 0,
-    grabbing: null, grabOffset: new THREE.Vector3(), grabRefDist: 1,
-    prevPinch: 0, prevGesture: '',
-    gesture: 'none',
+    gesture: 'none', prevGesture: '',
   };
 }
 const hs = [makeHS(), makeHS()];
@@ -684,490 +496,286 @@ function toWorld(wx, wy) {
 // ─── Gesture flash ────────────────────────────────────────────────────────────
 let flashTimer;
 function flash(g) {
-  const el = document.getElementById('gesture-flash');
+  const el = document.getElementById('gflash');
   el.textContent = GESTURE_EMOJI[g] || g;
   el.style.opacity = '1';
   clearTimeout(flashTimer);
-  flashTimer = setTimeout(() => (el.style.opacity = '0'), 900);
+  flashTimer = setTimeout(() => el.style.opacity = '0', 900);
 }
 
-// ─── Apply WebSocket frame → void scene ──────────────────────────────────────
-function applyVoid(frame) {
+// ─── Apply frame -> orb state ─────────────────────────────────────────────────
+function applyOrb(frame) {
   if (!frame?.hands) return;
+  const numPresent = frame.hands.filter(h => h.present).length;
+  const bothPresent = numPresent === 2;
+  orbState.handsPresent = numPresent > 0;
+  orbState.bothPresent = bothPresent;
+
+  // Track dominant gesture for orb light color
+  let dominant = 'none';
 
   frame.hands.forEach((hd, i) => {
     const h = hs[i];
     h.present = hd.present;
 
     if (!hd.present) {
-      cursors[i].visible   = false;
+      cursors[i].visible = false;
       handLights[i].intensity = 0;
-      grabLines[i].material.opacity = 0;
-      if (h.grabbing) { h.grabbing.userData.grabbed = false; h.grabbing = null; }
       h.sx.reset(); h.sy.reset(); h.sp.reset(); h.so.reset();
       return;
     }
 
-    // Smooth incoming data (double-filter: backend One Euro + frontend lerp)
     const wx = h.sx.push(hd.wrist_x);
     const wy = h.sy.push(hd.wrist_y);
     h.pinch    = h.sp.push(hd.pinch);
     h.openness = h.so.push(hd.openness);
-    h.velX = hd.velocity_x * 0.22;
-    h.velY = hd.velocity_y * 0.22;
-    const palmR = h.sr.push(hd.palm_roll);
-    const palmP = h.sch.push(hd.palm_pitch);
-    const palmY = h.sy2.push(hd.palm_yaw);
+    h.velX = hd.velocity_x;
+    h.velY = hd.velocity_y;
+    h.sr.push(hd.palm_roll);
+    h.sch.push(hd.palm_pitch);
+    h.sy2.push(hd.palm_yaw);
     h.worldPos.copy(toWorld(wx, wy));
     h.gesture = hd.discrete_gesture || 'none';
 
-    // Cursor
     cursors[i].visible = true;
     cursors[i].position.lerp(h.worldPos, 0.18);
-    cursors[i].rotation.x += 0.02;
-    cursors[i].rotation.y += 0.015;
+    cursors[i].rotation.x += 0.04;
+    cursors[i].rotation.z += 0.025;
     handLights[i].position.copy(cursors[i].position);
-    handLights[i].intensity = 0.6 + h.pinch * 1.8;
+    handLights[i].intensity = 0.4 + h.pinch * 2.0;
 
-    // ── Grab ──
-    if (!h.grabbing && h.pinch > CFG.grab.on && h.prevPinch <= CFG.grab.on) {
-      let best = null, bestD = Infinity;
-      floatingObjs.forEach(obj => {
-        if (obj.userData.grabbed) return;
-        const d = h.worldPos.distanceTo(obj.position);
-        if (d < CFG.grab.radius && d < bestD) { bestD = d; best = obj; }
-      });
-      if (best) {
-        h.grabbing = best;
-        best.userData.grabbed = true;
-        best.userData.springVel.set(0, 0, 0);
-        h.grabOffset.subVectors(best.position, h.worldPos);
-        const other = hs[1 - i];
-        if (other.present) h.grabRefDist = h.worldPos.distanceTo(other.worldPos);
-      }
+    // Impulse-based rotation from backend velocity (not during two-hand zoom)
+    if (!bothPresent) {
+      orbState.rotVelY += hd.velocity_x * 0.4;
+      orbState.rotVelX -= hd.velocity_y * 0.25;
     }
 
-    if (h.grabbing) {
-      const obj = h.grabbing;
-      const target = h.worldPos.clone().add(h.grabOffset);
-      // Spring physics — feels natural, not robotic
-      const force = target.clone().sub(obj.position).multiplyScalar(CFG.spring.k);
-      obj.userData.springVel.add(force).multiplyScalar(CFG.spring.damp);
-      obj.position.add(obj.userData.springVel);
-      obj.position.z = THREE.MathUtils.lerp(obj.position.z, 0, 0.06);
-
-      // Palm tilt → rotation
-      obj.rotation.x = THREE.MathUtils.lerp(obj.rotation.x, palmP * 2, 0.07);
-      obj.rotation.y = THREE.MathUtils.lerp(obj.rotation.y, palmY * 2, 0.07);
-      obj.rotation.z = THREE.MathUtils.lerp(obj.rotation.z, palmR * 2, 0.07);
-
-      // Two-hand scaling
-      const other = hs[1 - i];
-      if (other.present && h.grabRefDist > 0.05) {
-        const ratio  = h.worldPos.distanceTo(other.worldPos) / h.grabRefDist;
-        const target = THREE.MathUtils.clamp(ratio * obj.userData.baseScale, 0.2, 3.5);
-        obj.scale.setScalar(THREE.MathUtils.lerp(obj.scale.x, target, 0.06));
-      } else {
-        // Openness → scale
-        const ts = THREE.MathUtils.lerp(0.4, 2.6, h.openness) * obj.userData.baseScale;
-        obj.scale.setScalar(THREE.MathUtils.lerp(obj.scale.x, THREE.MathUtils.clamp(ts, 0.2, 3.5), 0.05));
-      }
-
-      // Grab line
-      const pts = grabLines[i].geometry.attributes.position;
-      pts.setXYZ(0, cursors[i].position.x, cursors[i].position.y, cursors[i].position.z);
-      pts.setXYZ(1, obj.position.x, obj.position.y, obj.position.z);
-      pts.needsUpdate = true;
-      grabLines[i].material.opacity = 0.35;
-    }
-
-    // Release
-    if (h.grabbing && h.pinch < CFG.grab.off) {
-      h.grabbing.userData.vel.set(h.velX, -h.velY, 0);
-      h.grabbing.userData.baseScale = h.grabbing.scale.x;
-      h.grabbing.userData.grabbed   = false;
-      h.grabbing = null;
-      grabLines[i].material.opacity = 0;
-    }
-
-    // ── Gesture edge ──
+    // Gesture edge detection for burst effects
     const g = h.gesture;
-    if (g !== h.prevGesture) {
-      if (g === 'closed_fist') {
-        spawnObject(h.worldPos.clone().add(new THREE.Vector3((Math.random()-.5)*.4, (Math.random()-.5)*.4, 0)));
-        flash(g);
-      }
-      if (g === 'open_palm') {
-        floatingObjs.forEach(obj => {
-          const d = h.worldPos.distanceTo(obj.position);
-          if (d < 3.8) {
-            const dir = obj.position.clone().sub(h.worldPos).normalize();
-            obj.userData.vel.addScaledVector(dir, (3.8 - d) / 3.8 * 0.2);
-          }
-        });
-        flash(g);
-      }
+    if (g !== orbState.prevGestures[i]) {
+      if (g === 'open')  { orbState.explodeStr = 1.0; flash(g); }
+      if (g === 'fist')  { orbState.implodeStr = 1.0; flash(g); }
       if (GESTURE_EMOJI[g]) flash(g);
+      orbState.prevGestures[i] = g;
     }
 
-    h.prevPinch   = h.pinch;
+    // Determine dominant gesture for light color
+    if (g === 'fist') dominant = 'fist';
+    else if (g === 'open' && dominant !== 'fist') dominant = 'open';
+    else if (h.pinch > 0.12 && dominant === 'none') dominant = 'pinch';
+
     h.prevGesture = g;
   });
+
+  orbState.dominantGesture = dominant;
+
+  // Two-hand zoom
+  if (bothPresent && hs[0].present && hs[1].present) {
+    const dist = hs[0].worldPos.distanceTo(hs[1].worldPos);
+    if (orbState.refDist < 0) { orbState.refDist = dist; orbState.refScale = orbState.scale; }
+    const ratio = dist / Math.max(orbState.refDist, 0.2);
+    orbState.targetScale = THREE.MathUtils.clamp(ratio * orbState.refScale, 0.10, 3.5);
+  } else {
+    if (orbState.refDist >= 0) orbState.refDist = -1;
+  }
 }
 
-// ─── Void physics tick ────────────────────────────────────────────────────────
+// ─── Particle physics ─────────────────────────────────────────────────────────
 let tick = 0;
 function physicsStep() {
   tick++;
-  floatingObjs.forEach((obj, idx) => {
-    if (obj.userData.grabbed) return;
-    const ud = obj.userData;
-    ud.vel.multiplyScalar(CFG.physics.drag);
-    ud.vel.y += Math.sin(tick * 0.0005 * 60 + ud.floatOff) * 0.00045;
-    const maxV = CFG.physics.maxVel;
-    ud.vel.clampLength(0, maxV);
-    obj.position.add(ud.vel);
-    obj.rotation.x += ud.rotSpd.x;
-    obj.rotation.y += ud.rotSpd.y;
-    // Boundary bounce
-    if (Math.abs(obj.position.x) > 7)   { ud.vel.x *= -0.55; obj.position.x = Math.sign(obj.position.x) * 7; }
-    if (Math.abs(obj.position.y) > 5)   { ud.vel.y *= -0.55; obj.position.y = Math.sign(obj.position.y) * 5; }
-    if (Math.abs(obj.position.z) > 2.5) { ud.vel.z *= -0.55; obj.position.z = Math.sign(obj.position.z) * 2.5; }
-    // Emissive pulse
-    const nearPinch = hs.reduce((best, h) => {
-      if (!h.present) return best;
-      const d = h.worldPos.distanceTo(obj.position);
-      return d < best.d ? { d, p: h.pinch } : best;
-    }, { d: Infinity, p: 0 });
-    obj.material.emissiveIntensity = 0.35 + nearPinch.p * 0.7 + Math.sin(tick * 0.04 + ud.floatOff) * 0.1;
+  const t = tick * 0.016;
+
+  // Scale lerp
+  orbState.scale = THREE.MathUtils.lerp(orbState.scale, orbState.targetScale, 0.07);
+  orbGroup.scale.setScalar(orbState.scale);
+
+  // Rotation: friction-based decay each render frame
+  orbState.rotVelY *= 0.96;
+  orbState.rotVelX *= 0.96;
+
+  // No hands: gently decay toward slow idle spin
+  if (!orbState.handsPresent) {
+    orbState.rotVelY = THREE.MathUtils.lerp(orbState.rotVelY, 0.0004, 0.015);
+    orbState.rotVelX = THREE.MathUtils.lerp(orbState.rotVelX, 0, 0.04);
+  }
+
+  // Clamp rotation velocities
+  orbState.rotVelY = THREE.MathUtils.clamp(orbState.rotVelY, -0.06, 0.06);
+  orbState.rotVelX = THREE.MathUtils.clamp(orbState.rotVelX, -0.04, 0.04);
+
+  orbGroup.rotation.x += orbState.rotVelX;
+  orbGroup.rotation.y += orbState.rotVelY;
+
+  // Orb light: color-shift based on dominant gesture
+  const gestColor = orbState.dominantGesture === 'fist' ? 0xff2200
+    : orbState.dominantGesture === 'pinch' ? 0xffffff
+    : 0x0066ff; // open and default both blue
+  orbLight.color.set(gestColor);
+
+  // Orb light: intensity pulses with explode/implode
+  orbLight.intensity = 0.5 + orbState.explodeStr * 1.5 + orbState.implodeStr * 1.5;
+
+  coreMesh.material.emissiveIntensity = 0.65 + Math.sin(t * 1.5) * 0.08;
+
+  // Decay burst strengths
+  if (orbState.explodeStr > 0) orbState.explodeStr = Math.max(0, orbState.explodeStr - 0.018);
+  if (orbState.implodeStr > 0) orbState.implodeStr = Math.max(0, orbState.implodeStr - 0.018);
+
+  // Pinch compression: max across hands
+  let maxPinchForce = 0;
+  hs.forEach(h => {
+    if (h.present && h.pinch > 0.12) {
+      const f = (h.pinch - 0.12) / 0.88 * 0.13;
+      maxPinchForce = Math.max(maxPinchForce, f);
+    }
   });
+
+  // CRITICAL FIX: compute hand positions in orbGroup LOCAL space before particle loop
+  // This ensures gravity well works correctly regardless of orbGroup rotation
+  orbGroup.updateMatrixWorld(true);
+  const localHandPos = hs.map(h => {
+    if (!h.present) return null;
+    const lp = h.worldPos.clone();
+    orbGroup.worldToLocal(lp);
+    return { lp, velX: h.velX, velY: h.velY, openness: h.openness, pinch: h.pinch, gesture: h.gesture };
+  });
+
+  for (let i = 0; i < TOTAL; i++) {
+    const idx = i * 3;
+    const breathe = 1.0 + Math.sin(t * 0.9 + phases[i]) * CFG.physics.breatheAmp;
+    const bx = basePos[idx]   * breathe;
+    const by = basePos[idx+1] * breathe;
+    const bz = basePos[idx+2] * breathe;
+
+    // Explode burst: push particles outward radially
+    if (orbState.explodeStr > 0) {
+      const len = Math.sqrt(bx*bx + by*by + bz*bz) + 0.001;
+      const f = orbState.explodeStr * 0.28;
+      currVel[idx]   += (bx/len)*f;
+      currVel[idx+1] += (by/len)*f;
+      currVel[idx+2] += (bz/len)*f;
+    }
+
+    // Implode burst: pull particles toward center
+    if (orbState.implodeStr > 0) {
+      const f = orbState.implodeStr * 0.22;
+      currVel[idx]   -= currPos[idx]  *f;
+      currVel[idx+1] -= currPos[idx+1]*f;
+      currVel[idx+2] -= currPos[idx+2]*f;
+    }
+
+    // Pinch compression toward center
+    if (maxPinchForce > 0) {
+      currVel[idx]   -= currPos[idx]   * maxPinchForce;
+      currVel[idx+1] -= currPos[idx+1] * maxPinchForce;
+      currVel[idx+2] -= currPos[idx+2] * maxPinchForce;
+    }
+
+    // Hand gravity well + velocity wake (in LOCAL space)
+    for (let hi = 0; hi < localHandPos.length; hi++) {
+      const lh = localHandPos[hi];
+      if (!lh) continue;
+      const dx = currPos[idx]   - lh.lp.x;
+      const dy = currPos[idx+1] - lh.lp.y;
+      const dz = currPos[idx+2] - lh.lp.z;
+      const dist2 = dx*dx + dy*dy + dz*dz;
+      const R2 = 4.5;
+      if (dist2 < R2) {
+        const dist = Math.sqrt(dist2) + 0.001;
+        const falloff = 1.0 - dist2 / R2;
+
+        // Continuous gesture-based gravity:
+        // fist = attract (+1), open = repel (-1), default = openness-based
+        let sign, strength;
+        if (lh.gesture === 'fist') {
+          sign = 1.0;
+          strength = 0.025;
+        } else if (lh.gesture === 'open') {
+          sign = -1.0;
+          strength = 0.020;
+        } else {
+          sign = lh.openness > 0.65 ? -1.0 : 1.0;
+          strength = 0.016;
+        }
+
+        const gf = sign * strength * falloff;
+        currVel[idx]   += (dx / dist) * gf;
+        currVel[idx+1] += (dy / dist) * gf;
+        currVel[idx+2] += (dz / dist) * gf;
+
+        // Velocity wake in local space
+        currVel[idx]   += lh.velX * 0.10 * falloff;
+        currVel[idx+1] += lh.velY * 0.10 * falloff;
+      }
+    }
+
+    // Restore toward base position
+    currVel[idx]   += (bx - currPos[idx])   * CFG.physics.restore;
+    currVel[idx+1] += (by - currPos[idx+1]) * CFG.physics.restore;
+    currVel[idx+2] += (bz - currPos[idx+2]) * CFG.physics.restore;
+
+    // Drift (damping)
+    currVel[idx]   *= CFG.physics.drift;
+    currVel[idx+1] *= CFG.physics.drift;
+    currVel[idx+2] *= CFG.physics.drift;
+
+    // Integrate
+    currPos[idx]   += currVel[idx];
+    currPos[idx+1] += currVel[idx+1];
+    currPos[idx+2] += currVel[idx+2];
+  }
+  orbGeo.attributes.position.needsUpdate = true;
 }
 
-// ─── Void HUD update ──────────────────────────────────────────────────────────
+// ─── HUD update ───────────────────────────────────────────────────────────────
 let hudTick = 0;
-function updateVoidHUD() {
-  if (++hudTick % 4 !== 0) return;
+function updateHUD() {
+  if (++hudTick % 3 !== 0) return;
   [0, 1].forEach(i => {
     const h = hs[i];
-    document.getElementById(`h${i}-pinch`).textContent    = h.present ? h.pinch.toFixed(2)    : '—';
-    document.getElementById(`h${i}-open`).textContent     = h.present ? h.openness.toFixed(2)  : '—';
-    document.getElementById(`h${i}-gest`).textContent     = h.present ? (h.gesture || '—')     : '—';
-    document.getElementById(`h${i}-pinch-bar`).style.width = h.present ? `${h.pinch * 100}%`   : '0%';
-    document.getElementById(`h${i}-open-bar`).style.width  = h.present ? `${h.openness * 100}%`: '0%';
-  });
-  document.getElementById('obj-count-void')?.remove();
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  STUDIO — Web Audio music engine
-// ─────────────────────────────────────────────────────────────────────────────
-const SCALES = {
-  pentatonic: { intervals: [0,2,4,7,9],        name: 'Pentatonic' },
-  major:      { intervals: [0,2,4,5,7,9,11],   name: 'Major'      },
-  minor:      { intervals: [0,2,3,5,7,8,10],   name: 'Minor'      },
-  blues:      { intervals: [0,3,5,6,7,10],     name: 'Blues'      },
-  dorian:     { intervals: [0,2,3,5,7,9,10],   name: 'Dorian'     },
-};
-const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-const SCALE_KEYS = Object.keys(SCALES);
-
-let scaleIdx  = 0;
-let octave    = 4;
-let audioCtx  = null;
-let masterGain, masterFilter, delayNode, delayFB, delayWetGain, reverbGain, analyser;
-let vibratoOsc, vibratoGain;
-let currentNoteOsc = null, currentNoteGain = null;
-let lastTriggerPinch = 0;
-
-// Smooth values for studio (per hand)
-const studioSmooth = {
-  rh: { x: new SmoothVal(0.10), y: new SmoothVal(0.10), pinch: new SmoothVal(0.12), open: new SmoothVal(0.09) },
-  lh: { x: new SmoothVal(0.10), y: new SmoothVal(0.10), open: new SmoothVal(0.09), roll: new SmoothVal(0.07) },
-};
-
-function initAudio() {
-  if (audioCtx) return;
-  audioCtx = new AudioContext();
-
-  analyser        = audioCtx.createAnalyser();
-  analyser.fftSize = 2048;
-
-  masterGain      = audioCtx.createGain();
-  masterGain.gain.value = 0.7;
-
-  masterFilter    = audioCtx.createBiquadFilter();
-  masterFilter.type = 'lowpass';
-  masterFilter.frequency.value = 1200;
-  masterFilter.Q.value = 1.5;
-
-  // Delay
-  delayNode       = audioCtx.createDelay(1.5);
-  delayNode.delayTime.value = 0.35;
-  delayFB         = audioCtx.createGain();
-  delayFB.gain.value = 0.2;
-  delayWetGain    = audioCtx.createGain();
-  delayWetGain.gain.value = 0;
-
-  delayNode.connect(delayFB);
-  delayFB.connect(delayNode);
-  delayNode.connect(delayWetGain);
-
-  // Reverb (simple feedback + allpass)
-  reverbGain = audioCtx.createGain();
-  reverbGain.gain.value = 0;
-  const allpass = audioCtx.createBiquadFilter();
-  allpass.type = 'allpass';
-  allpass.frequency.value = 3500;
-
-  // Vibrato
-  vibratoOsc  = audioCtx.createOscillator();
-  vibratoGain = audioCtx.createGain();
-  vibratoOsc.frequency.value = 5.5;
-  vibratoGain.gain.value     = 0;
-  vibratoOsc.start();
-
-  // Chain
-  masterFilter.connect(masterGain);
-  masterFilter.connect(delayNode);
-  delayWetGain.connect(masterGain);
-  masterFilter.connect(reverbGain);
-  reverbGain.connect(allpass);
-  allpass.connect(masterGain);
-  masterGain.connect(analyser);
-  analyser.connect(audioCtx.destination);
-}
-
-function noteFromWristY(wy) {
-  const scale = SCALES[SCALE_KEYS[scaleIdx]].intervals;
-  const total = scale.length;
-  const idx   = Math.max(0, Math.min(total - 1, Math.floor((1 - wy) * total)));
-  const semi  = scale[idx];
-  const midi  = (octave + 1) * 12 + semi;
-  const freq  = 440 * Math.pow(2, (midi - 69) / 12);
-  const name  = NOTE_NAMES[semi] + octave;
-  return { freq, name, midi };
-}
-
-function triggerNote(freq) {
-  stopNote();
-  const now = audioCtx.currentTime;
-  currentNoteOsc  = audioCtx.createOscillator();
-  currentNoteGain = audioCtx.createGain();
-  currentNoteOsc.type = 'triangle';
-  currentNoteOsc.frequency.value = freq;
-  vibratoOsc.connect(vibratoGain);
-  vibratoGain.connect(currentNoteOsc.frequency);
-  currentNoteGain.gain.setValueAtTime(0, now);
-  currentNoteGain.gain.linearRampToValueAtTime(0.5, now + 0.012);
-  currentNoteOsc.connect(currentNoteGain);
-  currentNoteGain.connect(masterFilter);
-  currentNoteOsc.start(now);
-}
-
-function stopNote() {
-  if (!currentNoteOsc) return;
-  const now = audioCtx.currentTime;
-  currentNoteGain.gain.setValueAtTime(currentNoteGain.gain.value, now);
-  currentNoteGain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
-  currentNoteOsc.stop(now + 0.2);
-  currentNoteOsc = null; currentNoteGain = null;
-}
-
-// Build scale buttons
-const scaleRow = document.getElementById('scale-row');
-SCALE_KEYS.forEach((key, idx) => {
-  const btn = document.createElement('button');
-  btn.className = 'scale-btn' + (idx === 0 ? ' active' : '');
-  btn.textContent = SCALES[key].name;
-  btn.onclick = () => {
-    scaleIdx = idx;
-    scaleRow.querySelectorAll('.scale-btn').forEach((b, j) => b.classList.toggle('active', j === idx));
-  };
-  scaleRow.appendChild(btn);
-});
-
-document.getElementById('oct-up').onclick   = () => { octave = Math.min(7, octave + 1); document.getElementById('oct-val').textContent = octave; };
-document.getElementById('oct-down').onclick = () => { octave = Math.max(1, octave - 1); document.getElementById('oct-val').textContent = octave; };
-
-// Waveform draw
-const wfCanvas = document.getElementById('waveform');
-const wfCtx    = wfCanvas.getContext('2d');
-function drawWaveform() {
-  const W = wfCanvas.offsetWidth, H = wfCanvas.offsetHeight;
-  wfCanvas.width  = W;
-  wfCanvas.height = H;
-  if (!analyser) {
-    wfCtx.clearRect(0, 0, W, H);
-    return;
-  }
-  const data = new Uint8Array(analyser.frequencyBinCount);
-  analyser.getByteTimeDomainData(data);
-  wfCtx.clearRect(0, 0, W, H);
-  wfCtx.beginPath();
-  wfCtx.strokeStyle = 'rgba(124,90,255,0.7)';
-  wfCtx.lineWidth   = 1.5;
-  const step = W / data.length;
-  data.forEach((v, i) => {
-    const y = (v / 128.0) * (H / 2);
-    i === 0 ? wfCtx.moveTo(0, y) : wfCtx.lineTo(i * step, y);
-  });
-  wfCtx.stroke();
-}
-
-// ─── Apply WebSocket frame → studio ──────────────────────────────────────────
-function applyStudio(frame) {
-  if (!frame?.hands || !audioCtx) return;
-
-  // Identify which hand is left/right by handedness field
-  const rhData = frame.hands.find(h => h.handedness === 'Right' && h.present) ||
-                 frame.hands.find(h => h.hand_index === 0 && h.present);
-  const lhData = frame.hands.find(h => h.handedness === 'Left'  && h.present) ||
-                 frame.hands.find(h => h.hand_index === 1 && h.present);
-
-  // ── RIGHT HAND → melody ──
-  const rhEl   = document.getElementById('rh-absent');
-  const rhPad  = document.getElementById('rh-pad');
-  if (rhData) {
-    rhEl.style.display = 'none';
-    const rx = studioSmooth.rh.x.push(rhData.wrist_x);
-    const ry = studioSmooth.rh.y.push(rhData.wrist_y);
-    const rp = studioSmooth.rh.pinch.push(rhData.pinch);
-    const ro = studioSmooth.rh.open.push(rhData.openness);
-
-    // Position dot
-    document.getElementById('rh-dot').style.left = `${rx * 100}%`;
-    document.getElementById('rh-dot').style.top  = `${(1 - ry) * 100}%`;
-
-    // Note
-    const note = noteFromWristY(ry);
-    document.getElementById('note-name').textContent = note.name;
-    document.getElementById('note-freq').textContent = `${note.freq.toFixed(1)} Hz`;
-
-    // Pitch-bend running note
-    if (currentNoteOsc) currentNoteOsc.frequency.linearRampToValueAtTime(note.freq, audioCtx.currentTime + 0.04);
-
-    // Trigger on pinch
-    if (rp > 0.65 && lastTriggerPinch <= 0.65) triggerNote(note.freq);
-    if (rp < 0.30 && lastTriggerPinch >= 0.30) stopNote();
-    lastTriggerPinch = rp;
-
-    document.getElementById('note-sub').textContent = rp > 0.65 ? '▶ playing' : 'Pinch to play';
-
-    // Filter from openness
-    const cutoff = THREE.MathUtils.lerp(200, 8000, ro);
-    masterFilter.frequency.linearRampToValueAtTime(cutoff, audioCtx.currentTime + 0.05);
-    document.getElementById('rh-filter').textContent = `${Math.round(cutoff)} Hz`;
-    document.getElementById('rh-filter-bar').style.width = `${ro * 100}%`;
-    document.getElementById('rh-pinch').textContent = rp.toFixed(2);
-    document.getElementById('rh-pinch-bar').style.width  = `${rp * 100}%`;
-
-    // Gesture → scale/octave change
-    const g = rhData.discrete_gesture;
-    document.getElementById('rh-gest-studio').textContent = GESTURE_EMOJI[g] ? `${GESTURE_EMOJI[g]} ${g}` : g || '—';
-    if (g !== hs[0].prevGesture) {
-      if (g === 'thumbs_up')  { octave = Math.min(7, octave + 1); document.getElementById('oct-val').textContent = octave; }
-      if (g === 'closed_fist'){ octave = Math.max(1, octave - 1); document.getElementById('oct-val').textContent = octave; }
-      if (g === 'open_palm')  { scaleIdx = (scaleIdx + 1) % SCALE_KEYS.length; scaleRow.querySelectorAll('.scale-btn').forEach((b,j)=>b.classList.toggle('active',j===scaleIdx)); }
-      if (g === 'peace')      { scaleIdx = (scaleIdx - 1 + SCALE_KEYS.length) % SCALE_KEYS.length; scaleRow.querySelectorAll('.scale-btn').forEach((b,j)=>b.classList.toggle('active',j===scaleIdx)); }
+    document.getElementById(`h${i}-pinch`).textContent      = h.present ? h.pinch.toFixed(2)    : '—';
+    document.getElementById(`h${i}-open`).textContent       = h.present ? h.openness.toFixed(2)  : '—';
+    document.getElementById(`h${i}-gest`).textContent       = h.present ? (h.gesture || '—')     : '—';
+    document.getElementById(`h${i}-pinch-bar`).style.width  = h.present ? `${h.pinch * 100}%`    : '0%';
+    document.getElementById(`h${i}-open-bar`).style.width   = h.present ? `${h.openness * 100}%` : '0%';
+    const dot = document.getElementById(`h${i}-dot`);
+    if (h.present) {
+      dot.style.left = `${h.sx.get() * 100}%`;
+      dot.style.top  = `${(1 - h.sy.get()) * 100}%`;
     }
-  } else {
-    rhEl.style.display = 'block';
-    document.getElementById('note-name').textContent = '—';
-    document.getElementById('note-sub').textContent  = 'Show right hand to play';
-    document.getElementById('note-freq').textContent = '';
-    studioSmooth.rh.x.reset(); studioSmooth.rh.y.reset();
-    studioSmooth.rh.pinch.reset(); studioSmooth.rh.open.reset();
-    if (currentNoteOsc) stopNote();
-  }
-
-  // ── LEFT HAND → effects ──
-  const lhEl = document.getElementById('lh-absent');
-  if (lhData) {
-    lhEl.style.display = 'none';
-    const lx  = studioSmooth.lh.x.push(lhData.wrist_x);
-    const ly  = studioSmooth.lh.y.push(lhData.wrist_y);
-    const lo  = studioSmooth.lh.open.push(lhData.openness);
-    const lro = studioSmooth.lh.roll.push(lhData.palm_roll);
-
-    document.getElementById('lh-dot').style.left = `${lx * 100}%`;
-    document.getElementById('lh-dot').style.top  = `${(1 - ly) * 100}%`;
-
-    // Reverb from wrist_y (lower hand = more reverb)
-    const rev = THREE.MathUtils.clamp(1 - ly, 0, 1);
-    reverbGain.gain.linearRampToValueAtTime(rev * 0.5, audioCtx.currentTime + 0.06);
-    document.getElementById('lh-reverb').textContent    = `${Math.round(rev * 100)}%`;
-    document.getElementById('lh-reverb-bar').style.width = `${rev * 100}%`;
-
-    // Delay feedback from openness
-    delayFB.gain.linearRampToValueAtTime(lo * 0.72, audioCtx.currentTime + 0.06);
-    delayWetGain.gain.linearRampToValueAtTime(lo * 0.45, audioCtx.currentTime + 0.06);
-    document.getElementById('lh-delay').textContent    = `${Math.round(lo * 100)}%`;
-    document.getElementById('lh-delay-bar').style.width = `${lo * 100}%`;
-
-    // Vibrato from palm roll (absolute value)
-    const vib = Math.min(Math.abs(lro) / 1.5, 1);
-    vibratoGain.gain.linearRampToValueAtTime(vib * 18, audioCtx.currentTime + 0.08);
-    document.getElementById('lh-vib').textContent    = `${Math.round(vib * 100)}%`;
-    document.getElementById('lh-vib-bar').style.width = `${vib * 100}%`;
-  } else {
-    lhEl.style.display = 'block';
-    reverbGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.3);
-    delayFB.gain.linearRampToValueAtTime(0.15, audioCtx.currentTime + 0.3);
-    delayWetGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.3);
-    vibratoGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.3);
-    studioSmooth.lh.x.reset(); studioSmooth.lh.y.reset();
-    studioSmooth.lh.open.reset(); studioSmooth.lh.roll.reset();
-  }
+  });
+  document.getElementById('orb-scale').textContent = orbState.scale.toFixed(2) + '×';
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Main animation loop
-// ─────────────────────────────────────────────────────────────────────────────
-// ─── Shared audio unlock ──────────────────────────────────────────────────────
-function unlockAudio() {
-  initAudio();
-  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-  const btn = document.getElementById('audio-btn');
-  if (btn) { btn.textContent = '🔊 Audio enabled'; btn.style.opacity = '0.4'; btn.disabled = true; }
-}
-
-document.getElementById('audio-btn').addEventListener('click', unlockAudio);
-
-let started = false;
+// ─── Main loop ────────────────────────────────────────────────────────────────
 function animate() {
   requestAnimationFrame(animate);
   if (latestFrame) {
-    applyVoid(latestFrame);
-    if (activeTab === 'studio') applyStudio(latestFrame);
+    applyOrb(latestFrame);
     latestFrame = null;
   }
   physicsStep();
-  updateVoidHUD();
-  if (activeTab === 'studio') drawWaveform();
+  updateHUD();
   composer.render();
 }
-
-// ─── Start on click ───────────────────────────────────────────────────────────
-// Start the render loop immediately — no gate
-started = true;
 animate();
 
+// Overlay click
 document.getElementById('overlay').addEventListener('click', () => {
-  unlockAudio();
   const ov = document.getElementById('overlay');
-  ov.style.opacity = '0';
-  ov.style.pointerEvents = 'none';
+  ov.style.opacity = '0'; ov.style.pointerEvents = 'none';
   setTimeout(() => ov.remove(), 700);
 }, { once: true });
 
-// ─── Resize ───────────────────────────────────────────────────────────────────
+// Resize
 window.addEventListener('resize', () => {
-  const W = window.innerWidth, H = window.innerHeight - 52;
-  camera.aspect = W / H;
+  const w = W(), h = H();
+  camera.aspect = w / h;
   camera.updateProjectionMatrix();
-  renderer.setSize(W, H);
-  composer.setSize(W, H);
-  bloomPass.resolution.set(W, H);
+  renderer.setSize(w, h);
+  composer.setSize(w, h);
+  bloomPass.resolution.set(w, h);
 });
 </script>
 </body>

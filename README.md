@@ -2,7 +2,6 @@
 
 A real-time hand gesture pipeline that bridges MediaPipe hand tracking with TouchDesigner, web browsers, and any OSC-compatible software.
 
-**V2** — refactored from a single-file script into a production-grade multi-threaded pipeline with a plugin output architecture, advanced gesture recognition, a live web dashboard, an infinite-void 3D interactive experience, per-user calibration, and a full CI-backed test suite.
 
 ---
 
@@ -116,33 +115,43 @@ hand-tracker --dashboard --sound
 
 ---
 
-## Infinite Void — 3D Interactive Experience
+## Particle Void — 3D Hand-Controlled Orb
 
 Open **http://localhost:8000/void** while `hand-tracker --dashboard` is running.
 
-Click the screen once to unlock audio, then show your hands to the camera.
+A 5 500-particle orb floats in infinite space. Use your hands to sculpt, spin, zoom, and explode it.
+
+### Opening the Particle Void
+
+```
+http://localhost:8000/void
+```
+
+No extra flags needed — the `/void` page shares the same server as the dashboard.
 
 ### Hand Controls
 
-| Action | Effect |
-|--------|--------|
-| Move wrist | Glowing cursor follows your hand in 3D space |
-| **Pinch** (thumb + index) | Grab the nearest floating object |
-| Move while pinching | Drag the object anywhere |
-| **Tilt palm** | Rotates the grabbed object (roll / pitch / yaw) |
-| **Openness** | Scales the grabbed object |
-| **Release pinch with velocity** | Throw / fling the object |
-| **Fist** ✊ | Spawn a new glowing 3D shape at your hand |
-| **Open palm** 🖐 | Explode nearby objects outward |
-| **Two hands** | Distance between wrists scales the grabbed object |
+| Gesture / Action | Effect |
+|-----------------|--------|
+| **Swipe hand left/right** | Spins the orb — velocity impulse, orb coasts with physics friction |
+| **Swipe hand up/down** | Tilts the orb vertically |
+| **Hold open palm** 🖐 | Continuously **repels** particles near your cursor (gravity well) |
+| **Hold closed fist** ✊ | Continuously **attracts** particles toward your cursor |
+| **Open palm → transition** | One-shot **explosion** burst (particles fly outward) |
+| **Fist → transition** | One-shot **implosion** burst (particles collapse inward) |
+| **Pinch** (thumb + index) | Compresses all particles toward the center |
+| **Move hand fast** | Particles in your path get pushed (velocity wake effect) |
+| **Spread both hands apart** | Zooms the orb out — particles expand |
+| **Bring both hands together** | Zooms the orb in — particles compress |
 
-### Sound
+### How Movement Works
 
-- Hand height → pitch (lower hand = bass, 80–800 Hz)
-- Openness → filter brightness (closed = dark, open = bright)
-- Pinch → volume (louder when gripping)
-- Spawning / exploding → synthesized sound effects
-- Ambient drone activates when hands are detected
+- **Swipe-based rotation**: hand velocity (not position) drives the orb's spin as an impulse. Swipe left → orb spins left and coasts to rest via physics friction (`×0.96` per frame). No hands → settles to a slow idle spin.
+- **Gravity well**: each hand cursor creates a spatial influence zone (~2 world-unit radius). Holding an open palm repels particles within range; holding a fist attracts them. Other gestures use openness to decide (open > 0.65 = repel, else attract). Coordinates are computed in the orb's local space, so the effect tracks correctly even after the orb has rotated.
+- **Two-hand zoom**: the distance between your two wrists is compared to where they were when the second hand entered frame. Spread = scale up, close = scale down. Rotation impulses are disabled during zoom so the two modes don't fight.
+- **Pinch compression**: holding a pinch above 12% continuously draws particles inward; releasing lets spring physics restore them.
+- **Gesture bursts**: transitioning to `open` or `fist` fires a one-shot radial force that decays over ~55 frames. The orb light color shifts (red during fist, white during pinch, blue default) and pulses brighter during bursts.
+- **Velocity wake**: moving your hand quickly pushes nearby particles in the direction of motion, leaving a visible trail through the orb.
 
 ---
 
@@ -293,6 +302,7 @@ hand-tracking-bridge/
 | Camera not opening | Try `--camera 1` or `--camera 2` |
 | Low FPS | Reduce resolution: `--width 640 --height 480` |
 | Module not found | Ensure venv is active and `pip install -e .` completed |
+| `ValueError: list.remove(x)` in server.py | Update to latest code — fixed in `disconnect()` guard |
 | Void page shows no hands | Run with `--dashboard` flag; click the page once to connect audio |
 | Dashboard sound button missing | Hard-refresh the page (Ctrl+Shift+R) after updating |
 | No sound in dashboard | Click **♪ SOUND OFF** first — browsers require a user gesture to start Web Audio |

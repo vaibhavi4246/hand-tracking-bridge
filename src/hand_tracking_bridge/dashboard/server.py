@@ -40,7 +40,8 @@ class ConnectionManager:
         logger.debug("Dashboard: client connected (%d total)", len(self.active))
 
     def disconnect(self, ws: WebSocket) -> None:
-        self.active.remove(ws)
+        if ws in self.active:
+            self.active.remove(ws)
         logger.debug("Dashboard: client disconnected (%d total)", len(self.active))
 
     async def broadcast(self, message: str) -> None:

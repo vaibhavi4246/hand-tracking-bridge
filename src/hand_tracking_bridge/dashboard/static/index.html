@@ -4,331 +4,320 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Hand Tracking Bridge — Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:      #03050e;
+      --surface: rgba(255,255,255,0.05);
+      --border:  rgba(255,255,255,0.09);
+      --accent:  #7c5aff;
+      --cyan:    #00d4ff;
+      --green:   #4ade80;
+      --yellow:  #fbbf24;
+      --danger:  #ff4466;
+      --text:    #e8eaf0;
+      --muted:   #4a4e6a;
+      --glass:   blur(18px) saturate(160%);
+      --r:       10px;
+      --nav-h:   48px;
+      --font:    'Inter', sans-serif;
+      --fhead:   'Space Grotesk', sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      background: #0d0d0d;
-      color: #e0e0e0;
-      font-family: 'Courier New', monospace;
-      padding: 16px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
       min-height: 100vh;
+      padding-top: var(--nav-h);
     }
 
-    header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 20px;
-      border-bottom: 1px solid #333;
-      padding-bottom: 12px;
+    /* ── Shared Nav ── */
+    #nav {
+      position: fixed; top: 0; left: 0; right: 0; height: var(--nav-h); z-index: 200;
+      display: flex; align-items: center; justify-content: space-between; padding: 0 24px;
+      background: rgba(3,5,14,0.82); backdrop-filter: var(--glass);
+      border-bottom: 1px solid var(--border);
     }
+    #nav .logo { font-family: var(--fhead); font-size: 18px; font-weight: 700; color: var(--accent); letter-spacing: -0.5px; }
+    #nav .logo span { color: var(--cyan); }
 
-    header h1 { font-size: 1.2rem; color: #00d4aa; letter-spacing: 2px; text-transform: uppercase; }
+    .nav-tabs { display: flex; gap: 4px; }
+    .nav-tab {
+      background: none; border: 1px solid transparent; color: var(--muted);
+      font-family: var(--font); font-size: 13px; font-weight: 500;
+      padding: 5px 16px; border-radius: 20px; cursor: pointer; text-decoration: none;
+      transition: all 0.18s; display: flex; align-items: center;
+    }
+    .nav-tab:hover  { color: var(--text); border-color: var(--border); }
+    .nav-tab.active { color: var(--text); background: var(--surface); border-color: var(--border); }
 
-    #status {
-      display: flex; align-items: center; gap: 8px; font-size: 0.8rem;
-    }
-    #status-dot {
-      width: 10px; height: 10px; border-radius: 50%; background: #555;
-      transition: background 0.3s;
-    }
-    #status-dot.connected { background: #00d4aa; }
-    #status-dot.disconnected { background: #ff4444; }
+    .nav-right { display: flex; align-items: center; gap: 14px; }
 
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-      gap: 16px;
-    }
-
-    .card {
-      background: #161616;
-      border: 1px solid #2a2a2a;
-      border-radius: 8px;
-      padding: 16px;
-    }
-
-    .card h2 {
-      font-size: 0.85rem;
-      color: #888;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      margin-bottom: 14px;
-    }
-
-    canvas {
-      width: 100%;
-      aspect-ratio: 4/3;
-      background: #0a0a0a;
-      border-radius: 4px;
-      display: block;
-    }
-
-    .gesture-label {
-      text-align: center;
-      font-size: 1.6rem;
-      font-weight: bold;
-      color: #00d4aa;
-      min-height: 2.4rem;
-      margin-top: 10px;
-      letter-spacing: 2px;
-      text-transform: uppercase;
-    }
-
-    .metrics { display: flex; flex-direction: column; gap: 10px; }
-
-    .metric-row { display: flex; align-items: center; gap: 10px; font-size: 0.82rem; }
-    .metric-name { width: 80px; color: #888; flex-shrink: 0; }
-    .bar-bg {
-      flex: 1;
-      height: 14px;
-      background: #222;
-      border-radius: 7px;
-      overflow: hidden;
-    }
-    .bar-fill {
-      height: 100%;
-      background: #00d4aa;
-      border-radius: 7px;
-      transition: width 0.05s linear;
-      min-width: 2px;
-    }
-    .bar-fill.red { background: #ff4c4c; }
-    .bar-fill.yellow { background: #f0c040; }
-    .metric-value { width: 40px; text-align: right; font-size: 0.75rem; color: #aaa; }
-
-    .stats-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
-    .stat-box {
-      background: #1a1a1a;
-      border: 1px solid #2a2a2a;
-      border-radius: 6px;
-      padding: 10px 12px;
-      text-align: center;
-    }
-    .stat-label { font-size: 0.7rem; color: #666; text-transform: uppercase; margin-bottom: 4px; }
-    .stat-value { font-size: 1.1rem; color: #fff; font-weight: bold; }
-
-    .finger-grid {
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      gap: 8px;
-      margin-top: 4px;
-    }
-    .finger-box {
-      display: flex; flex-direction: column; align-items: center; gap: 4px;
-    }
-    .finger-name { font-size: 0.6rem; color: #666; text-transform: uppercase; }
-    .finger-bar-bg {
-      width: 24px; height: 80px;
-      background: #1a1a1a;
-      border-radius: 4px;
-      display: flex; align-items: flex-end;
-      overflow: hidden;
-      border: 1px solid #2a2a2a;
-    }
-    .finger-bar-fill {
-      width: 100%;
-      background: #7b61ff;
-      transition: height 0.05s linear;
-      border-radius: 3px;
-    }
-    .finger-val { font-size: 0.65rem; color: #888; }
-
-    .palm-display {
-      display: flex; justify-content: space-around; margin-top: 8px;
-    }
-    .palm-axis { text-align: center; }
-    .palm-axis .axis-label { font-size: 0.65rem; color: #666; text-transform: uppercase; }
-    .palm-axis .axis-val { font-size: 0.9rem; color: #f0c040; }
-
-    footer {
-      margin-top: 20px;
-      text-align: center;
-      font-size: 0.7rem;
-      color: #444;
-    }
+    #ws-dot { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--muted); }
+    #ws-dot .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); transition: background .4s; }
+    #ws-dot.connected    .dot { background: var(--green); box-shadow: 0 0 6px #4ade8088; }
+    #ws-dot.disconnected .dot { background: var(--danger); }
 
     #sound-toggle {
-      background: #1a1a1a;
-      border: 1px solid #333;
-      color: #888;
-      font-family: 'Courier New', monospace;
-      font-size: 0.75rem;
-      padding: 4px 12px;
-      border-radius: 4px;
-      cursor: pointer;
-      letter-spacing: 1px;
-      transition: border-color 0.2s, color 0.2s;
+      background: var(--surface); border: 1px solid var(--border); color: var(--muted);
+      font-family: var(--font); font-size: 12px; font-weight: 500;
+      padding: 5px 14px; border-radius: 20px; cursor: pointer; transition: all .2s;
     }
-    #sound-toggle.active {
-      border-color: #00d4aa;
-      color: #00d4aa;
-    }
+    #sound-toggle.active { color: var(--cyan); border-color: var(--cyan); background: rgba(0,212,255,0.08); }
 
-    #scope-canvas {
-      width: 100%;
-      height: 80px;
-      background: #0a0a0a;
-      border-radius: 4px;
-      display: block;
-      margin-bottom: 10px;
-    }
+    /* ── Layout ── */
+    .page { padding: 20px 24px 32px; }
 
-    .sound-params {
+    .stats-bar {
+      display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap;
+    }
+    .stat-chip {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+      padding: 8px 16px; display: flex; flex-direction: column; gap: 2px; min-width: 100px;
+    }
+    .stat-chip .sc-lbl { font-size: 9px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); }
+    .stat-chip .sc-val { font-family: var(--fhead); font-size: 20px; font-weight: 700; color: var(--text); }
+
+    .hands-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      margin-top: 8px;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 16px;
+      margin-bottom: 16px;
     }
+
+    /* ── Cards ── */
+    .card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 18px;
+      backdrop-filter: blur(8px);
+    }
+    .card-title {
+      font-size: 9px; font-weight: 600; letter-spacing: 2.5px; text-transform: uppercase;
+      color: var(--muted); margin-bottom: 14px; display: flex; align-items: center; gap: 8px;
+    }
+    .card-title .badge {
+      font-size: 10px; font-weight: 600; letter-spacing: 1px;
+      padding: 2px 8px; border-radius: 20px;
+      background: rgba(124,90,255,0.15); color: var(--accent);
+    }
+    .card-title .badge.cyan  { background: rgba(0,212,255,0.12); color: var(--cyan); }
+    .card-title .badge.green { background: rgba(74,222,128,0.12); color: var(--green); }
+
+    /* ── Skeleton canvas ── */
+    .skeleton-wrap {
+      width: 100%; aspect-ratio: 4/3;
+      background: rgba(0,0,0,0.4); border: 1px solid var(--border);
+      border-radius: 8px; overflow: hidden; margin-bottom: 14px;
+    }
+    .skeleton-wrap canvas { width: 100%; height: 100%; display: block; }
+
+    /* ── Gesture label ── */
+    .gesture-lbl {
+      text-align: center; font-family: var(--fhead);
+      font-size: 22px; font-weight: 700; letter-spacing: 1px;
+      color: var(--accent); min-height: 2rem; margin-bottom: 14px;
+      text-shadow: 0 0 20px rgba(124,90,255,0.4);
+    }
+
+    /* ── Metric bars ── */
+    .metrics { display: flex; flex-direction: column; gap: 9px; }
+    .metric-row { display: flex; align-items: center; gap: 10px; }
+    .metric-name { width: 76px; font-size: 11px; color: var(--muted); flex-shrink: 0; }
+    .bar-bg { flex: 1; height: 5px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 3px; transition: width .06s; min-width: 2px; background: var(--accent); }
+    .bar-fill.cyan   { background: var(--cyan); }
+    .bar-fill.yellow { background: var(--yellow); }
+    .metric-val { width: 38px; text-align: right; font-family: var(--fhead); font-size: 11px; color: var(--text); }
+
+    /* ── Finger bars ── */
+    .section-label {
+      font-size: 9px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase;
+      color: var(--muted); margin: 14px 0 10px;
+    }
+    .finger-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+    .finger-box { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+    .finger-name { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+    .finger-bar-bg {
+      width: 20px; height: 70px; background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border); border-radius: 4px;
+      display: flex; align-items: flex-end; overflow: hidden;
+    }
+    .finger-bar-fill { width: 100%; background: var(--accent); transition: height .06s; border-radius: 3px; }
+    .finger-val { font-size: 10px; color: var(--muted); font-family: var(--fhead); }
+
+    /* ── Palm orientation ── */
+    .palm-row { display: flex; justify-content: space-around; margin-top: 4px; }
+    .palm-axis { text-align: center; }
+    .palm-axis .ax-lbl { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+    .palm-axis .ax-val { font-family: var(--fhead); font-size: 14px; font-weight: 600; color: var(--yellow); margin-top: 2px; }
+
+    /* ── Bottom row: pipeline + sound ── */
+    .bottom-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+
+    .stats-mini { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .stat-box {
+      background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+      border-radius: 8px; padding: 12px 14px; text-align: center;
+    }
+    .stat-box .sb-lbl { font-size: 9px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+    .stat-box .sb-val { font-family: var(--fhead); font-size: 22px; font-weight: 700; color: var(--text); }
+
+    /* ── Scope ── */
+    #scope-canvas {
+      width: 100%; height: 72px; display: block;
+      background: rgba(0,0,0,0.35); border: 1px solid var(--border);
+      border-radius: 8px; margin-bottom: 12px;
+    }
+
+    .sound-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
   </style>
 </head>
 <body>
 
-<header>
-  <h1>Hand Tracking Bridge</h1>
-  <div id="status">
-    <div id="status-dot" class="disconnected"></div>
-    <span id="status-text">Disconnected</span>
-    &nbsp;|&nbsp;
-    <span id="fps-display">0 fps</span>
-    &nbsp;|&nbsp;
-    <span id="latency-display">0 ms</span>
-    &nbsp;|&nbsp;
-    <button id="sound-toggle">♪ SOUND OFF</button>
+<!-- ── Shared Nav ── -->
+<nav id="nav">
+  <div class="logo">◎ <span>HAND</span> TRACKING</div>
+  <div class="nav-tabs">
+    <a class="nav-tab active" href="/">Dashboard</a>
+    <a class="nav-tab" href="/void">Particle Void</a>
   </div>
-</header>
+  <div class="nav-right">
+    <div id="ws-dot" class="disconnected">
+      <div class="dot"></div>
+      <span id="status-text">Connecting</span>
+      <span id="fps-display" style="color:var(--text);margin-left:6px;"></span>
+      <span id="latency-display" style="color:var(--muted);margin-left:4px;"></span>
+    </div>
+    <button id="sound-toggle">♪ Sound off</button>
+  </div>
+</nav>
 
-<div class="grid" id="hands-container">
-  <!-- Hand cards injected by JS -->
+<!-- ── Page content ── -->
+<div class="page">
+
+  <!-- Stats bar -->
+  <div class="stats-bar">
+    <div class="stat-chip"><div class="sc-lbl">Frames</div><div class="sc-val" id="stat-frames">0</div></div>
+    <div class="stat-chip"><div class="sc-lbl">FPS</div><div class="sc-val" id="stat-fps">0</div></div>
+    <div class="stat-chip"><div class="sc-lbl">Latency</div><div class="sc-val" id="stat-latency">— ms</div></div>
+    <div class="stat-chip"><div class="sc-lbl">Hands</div><div class="sc-val" id="stat-hands">0</div></div>
+  </div>
+
+  <!-- Hand cards -->
+  <div class="hands-grid" id="hands-container"></div>
+
+  <!-- Bottom row -->
+  <div class="bottom-grid">
+
+    <div class="card">
+      <div class="card-title">Pipeline Stats</div>
+      <div class="stats-mini">
+        <div class="stat-box"><div class="sb-lbl">Frames</div><div class="sb-val" id="stat-frames2">0</div></div>
+        <div class="stat-box"><div class="sb-lbl">Latency</div><div class="sb-val" id="stat-latency2">—</div></div>
+        <div class="stat-box"><div class="sb-lbl">Hands</div><div class="sb-val" id="stat-hands2">0</div></div>
+        <div class="stat-box"><div class="sb-lbl">FPS</div><div class="sb-val" id="stat-fps2">0</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">
+        Sound Synth
+        <span id="sound-state" class="badge">off</span>
+      </div>
+      <canvas id="scope-canvas" width="600" height="72"></canvas>
+      <div class="sound-row">
+        <div class="stat-box"><div class="sb-lbl">Note</div><div class="sb-val" id="sound-note">—</div></div>
+        <div class="stat-box"><div class="sb-lbl">Wave</div><div class="sb-val" id="sound-wave" style="font-size:14px">—</div></div>
+      </div>
+      <div class="metrics">
+        <div class="metric-row">
+          <span class="metric-name">Volume</span>
+          <div class="bar-bg"><div class="bar-fill cyan" id="sound-bar-vol" style="width:0%"></div></div>
+          <span class="metric-val" id="sound-val-vol">0.00</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-name">Vibrato</span>
+          <div class="bar-bg"><div class="bar-fill yellow" id="sound-bar-vib" style="width:0%"></div></div>
+          <span class="metric-val" id="sound-val-vib">0.00</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
 </div>
-
-<div style="margin-top:16px;" class="grid">
-  <div class="card">
-    <h2>Pipeline Stats</h2>
-    <div class="stats-grid">
-      <div class="stat-box">
-        <div class="stat-label">Frames</div>
-        <div class="stat-value" id="stat-frames">0</div>
-      </div>
-      <div class="stat-box">
-        <div class="stat-label">Latency</div>
-        <div class="stat-value" id="stat-latency">— ms</div>
-      </div>
-      <div class="stat-box">
-        <div class="stat-label">Hands</div>
-        <div class="stat-value" id="stat-hands">0</div>
-      </div>
-      <div class="stat-box">
-        <div class="stat-label">FPS</div>
-        <div class="stat-value" id="stat-fps">0</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>Sound Synth <span id="sound-state" style="color:#555;font-size:0.7rem;margin-left:6px;">off — click ♪ SOUND OFF to enable</span></h2>
-    <canvas id="scope-canvas" width="600" height="80"></canvas>
-    <div class="sound-params">
-      <div class="stat-box">
-        <div class="stat-label">Note</div>
-        <div class="stat-value" id="sound-note">—</div>
-      </div>
-      <div class="stat-box">
-        <div class="stat-label">Wave</div>
-        <div class="stat-value" id="sound-wave">—</div>
-      </div>
-    </div>
-    <div class="metrics" style="margin-top:10px;">
-      <div class="metric-row">
-        <span class="metric-name">volume</span>
-        <div class="bar-bg"><div class="bar-fill" id="sound-bar-vol" style="width:0%"></div></div>
-        <span class="metric-value" id="sound-val-vol">0.00</span>
-      </div>
-      <div class="metric-row">
-        <span class="metric-name">vibrato</span>
-        <div class="bar-bg"><div class="bar-fill yellow" id="sound-bar-vib" style="width:0%"></div></div>
-        <span class="metric-value" id="sound-val-vib">0.00</span>
-      </div>
-    </div>
-  </div>
-</div>
-
-<footer>Hand Tracking Bridge v2 &mdash; MediaPipe + OSC + WebSocket</footer>
 
 <script>
-// ─── MediaPipe hand connection pairs ────────────────────────────────────────
+// ─── MediaPipe connections ────────────────────────────────────────────────────
+// Points: 0=wrist  1-5=estimated knuckles (wrist→tip midpoints)  6-10=tips (thumb→pinky)
 const HAND_CONNECTIONS = [
-  [0,1],[1,2],[2,3],[3,4],     // Thumb
-  [0,5],[5,6],[6,7],[7,8],     // Index
-  [0,9],[9,10],[10,11],[11,12],// Middle
-  [0,13],[13,14],[14,15],[15,16],// Ring
-  [0,17],[17,18],[18,19],[19,20],// Pinky
-  [5,9],[9,13],[13,17]         // Palm
+  [0,1],[1,6],          // thumb
+  [0,2],[2,7],          // index
+  [0,3],[3,8],          // middle
+  [0,4],[4,9],          // ring
+  [0,5],[5,10],         // pinky
+  [2,3],[3,4],[4,5],    // palm knuckle arc
 ];
 
-const LANDMARK_COLOR = '#00d4aa';
-const BONE_COLOR = 'rgba(0, 212, 170, 0.4)';
-const ABSENT_COLOR = '#2a2a2a';
-
-// ─── State ───────────────────────────────────────────────────────────────────
+// ─── State ────────────────────────────────────────────────────────────────────
 let ws = null;
 let frameCount = 0;
-let lastFrameTime = performance.now();
 let fpsBuffer = [];
 
-// ─── DOM ─────────────────────────────────────────────────────────────────────
-const container = document.getElementById('hands-container');
-const statusDot = document.getElementById('status-dot');
+// ─── DOM refs ─────────────────────────────────────────────────────────────────
+const container  = document.getElementById('hands-container');
+const wsDot      = document.getElementById('ws-dot');
 const statusText = document.getElementById('status-text');
 const fpsDisplay = document.getElementById('fps-display');
-const latencyDisplay = document.getElementById('latency-display');
+const latDisplay = document.getElementById('latency-display');
 
-// ─── Hand card builder ───────────────────────────────────────────────────────
+// ─── Hand card builder ────────────────────────────────────────────────────────
 function createHandCard(idx) {
   const card = document.createElement('div');
   card.className = 'card';
   card.id = `hand-${idx}`;
   card.innerHTML = `
-    <h2>Hand ${idx} <span id="hand-${idx}-label" style="color:#555;font-size:0.7rem;margin-left:8px;">Not detected</span></h2>
-    <canvas id="hand-${idx}-canvas" width="320" height="240"></canvas>
-    <div class="gesture-label" id="hand-${idx}-gesture">—</div>
-    <div class="metrics" style="margin-top:14px;">
+    <div class="card-title">
+      Hand ${idx}
+      <span id="hand-${idx}-badge" class="badge">Not detected</span>
+    </div>
+    <div class="skeleton-wrap">
+      <canvas id="hand-${idx}-canvas" width="320" height="240"></canvas>
+    </div>
+    <div class="gesture-lbl" id="hand-${idx}-gesture">—</div>
+    <div class="metrics">
       ${['pinch','openness','velocity_x','velocity_y'].map(k => `
         <div class="metric-row">
           <span class="metric-name">${k}</span>
-          <div class="bar-bg"><div class="bar-fill ${k.startsWith('velocity') ? 'yellow' : ''}" id="hand-${idx}-bar-${k}" style="width:0%"></div></div>
-          <span class="metric-value" id="hand-${idx}-val-${k}">0.00</span>
+          <div class="bar-bg"><div class="bar-fill ${k.startsWith('velocity') ? 'yellow' : 'cyan'}" id="hand-${idx}-bar-${k}" style="width:0%"></div></div>
+          <span class="metric-val" id="hand-${idx}-val-${k}">0.00</span>
         </div>`).join('')}
     </div>
-    <div style="margin-top:14px;">
-      <div style="font-size:0.75rem;color:#666;text-transform:uppercase;margin-bottom:8px;">Finger Flexion</div>
-      <div class="finger-grid" id="hand-${idx}-fingers"></div>
-    </div>
-    <div style="margin-top:14px;">
-      <div style="font-size:0.75rem;color:#666;text-transform:uppercase;margin-bottom:4px;">Palm Orientation</div>
-      <div class="palm-display">
-        ${['roll','pitch','yaw'].map(a => `
-          <div class="palm-axis">
-            <div class="axis-label">${a}</div>
-            <div class="axis-val" id="hand-${idx}-palm-${a}">0.00</div>
-          </div>`).join('')}
-      </div>
+    <div class="section-label">Finger Flexion</div>
+    <div class="finger-grid" id="hand-${idx}-fingers"></div>
+    <div class="section-label">Palm Orientation</div>
+    <div class="palm-row">
+      ${['roll','pitch','yaw'].map(a => `
+        <div class="palm-axis">
+          <div class="ax-lbl">${a}</div>
+          <div class="ax-val" id="hand-${idx}-palm-${a}">0.00</div>
+        </div>`).join('')}
     </div>
   `;
   return card;
 }
 
 function createFingerBars(handIdx, fingers) {
-  const container = document.getElementById(`hand-${handIdx}-fingers`);
-  if (!container) return;
-  if (container.children.length === 0) {
+  const wrap = document.getElementById(`hand-${handIdx}-fingers`);
+  if (!wrap) return;
+  if (wrap.children.length === 0) {
     fingers.forEach(f => {
-      container.innerHTML += `
+      wrap.innerHTML += `
         <div class="finger-box">
           <div class="finger-bar-bg">
             <div class="finger-bar-fill" id="hand-${handIdx}-ff-${f.name}" style="height:0%"></div>
@@ -346,27 +335,27 @@ function createFingerBars(handIdx, fingers) {
   });
 }
 
-// ─── Canvas skeleton renderer ─────────────────────────────────────────────
+// ─── Skeleton renderer ────────────────────────────────────────────────────────
 function drawSkeleton(canvas, landmarks, present) {
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
   ctx.clearRect(0, 0, W, H);
 
-  if (!present || !landmarks || landmarks.length < 21) {
-    ctx.fillStyle = '#111';
+  if (!present || !landmarks || landmarks.length < 11) {
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
     ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = '#2a2a2a';
-    ctx.font = '12px monospace';
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    ctx.font = '13px Inter, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('No hand detected', W / 2, H / 2);
     return;
   }
 
-  ctx.fillStyle = '#0a0a0a';
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
   ctx.fillRect(0, 0, W, H);
 
   // Bones
-  ctx.strokeStyle = BONE_COLOR;
+  ctx.strokeStyle = 'rgba(124,90,255,0.35)';
   ctx.lineWidth = 2;
   HAND_CONNECTIONS.forEach(([a, b]) => {
     const la = landmarks[a], lb = landmarks[b];
@@ -379,52 +368,50 @@ function drawSkeleton(canvas, landmarks, present) {
 
   // Joints
   landmarks.forEach((lm, i) => {
-    const isTip = [4, 8, 12, 16, 20].includes(i);
+    if (!lm) return;
+    const isTip = i >= 6;
     ctx.beginPath();
     ctx.arc(lm.tip_x * W, lm.tip_y * H, isTip ? 5 : 3, 0, Math.PI * 2);
-    ctx.fillStyle = isTip ? '#fff' : LANDMARK_COLOR;
+    ctx.fillStyle = isTip ? '#00d4ff' : '#7c5aff';
     ctx.fill();
   });
 }
 
-// Extend landmarks array with wrist at index 0 for canvas rendering
-function buildLandmarksForCanvas(hand) {
-  // fingers array only has tip positions; for full skeleton we need all 21 landmarks
-  // We reconstruct a minimal list using finger tip positions + wrist
-  // (Full landmark data could be added to GestureFrame in a future enhancement)
-  // For now render wrist + 5 fingertips as a simplified skeleton
-  const pts = [];
-  // Wrist at index 0
-  pts[0] = { tip_x: hand.wrist_x, tip_y: 1.0 - hand.wrist_y };
-  hand.fingers.forEach((f, i) => {
-    const tipIdx = [4, 8, 12, 16, 20][i];
-    pts[tipIdx] = { tip_x: f.tip_x, tip_y: f.tip_y };
+function buildLandmarks(hand) {
+  // 0: wrist | 1-5: estimated knuckles at 50% wrist→tip | 6-10: finger tips
+  const wx = hand.wrist_x;
+  const wy = 1.0 - hand.wrist_y;
+  const pts = [{ tip_x: wx, tip_y: wy }];
+  hand.fingers.forEach(f => {
+    const tx = f.tip_x, ty = 1.0 - f.tip_y;
+    pts.push({ tip_x: (wx + tx) * 0.5, tip_y: (wy + ty) * 0.5 }); // knuckles 1-5
   });
-  return pts;
+  hand.fingers.forEach(f => {
+    pts.push({ tip_x: f.tip_x, tip_y: 1.0 - f.tip_y }); // tips 6-10
+  });
+  return pts; // length 11, dense, all Y-inverted consistently
 }
 
-// ─── Update UI from frame data ────────────────────────────────────────────
+// ─── Update hand from frame ───────────────────────────────────────────────────
 function updateHand(hand) {
   const idx = hand.hand_index;
-  const card = document.getElementById(`hand-${idx}`);
-  if (!card) return;
+  if (!document.getElementById(`hand-${idx}`)) return;
 
-  const label = document.getElementById(`hand-${idx}-label`);
-  if (label) {
-    label.textContent = hand.present ? hand.handedness : 'Not detected';
-    label.style.color = hand.present ? '#00d4aa' : '#555';
+  const badge = document.getElementById(`hand-${idx}-badge`);
+  if (badge) {
+    badge.textContent  = hand.present ? hand.handedness : 'Not detected';
+    badge.className    = hand.present ? 'badge green' : 'badge';
   }
 
   const canvas = document.getElementById(`hand-${idx}-canvas`);
-  if (canvas) drawSkeleton(canvas, buildLandmarksForCanvas(hand), hand.present);
+  if (canvas) drawSkeleton(canvas, buildLandmarks(hand), hand.present);
 
-  const gesture = document.getElementById(`hand-${idx}-gesture`);
-  if (gesture) {
-    gesture.textContent = hand.present ? hand.discrete_gesture : '—';
-    gesture.style.color = hand.present ? '#00d4aa' : '#333';
+  const gestEl = document.getElementById(`hand-${idx}-gesture`);
+  if (gestEl) {
+    gestEl.textContent = hand.present ? (hand.discrete_gesture || '—') : '—';
+    gestEl.style.color = hand.present ? 'var(--accent)' : 'var(--muted)';
   }
 
-  // Metric bars
   [
     ['pinch', hand.pinch, 1],
     ['openness', hand.openness, 1],
@@ -438,13 +425,11 @@ function updateHand(hand) {
     if (val) val.textContent = raw.toFixed(2);
   });
 
-  // Fingers
   if (hand.fingers) createFingerBars(idx, hand.fingers);
 
-  // Palm orientation
-  ['roll', 'pitch', 'yaw'].forEach(axis => {
-    const el = document.getElementById(`hand-${idx}-palm-${axis}`);
-    if (el) el.textContent = (hand[`palm_${axis}`] || 0).toFixed(2);
+  ['roll','pitch','yaw'].forEach(a => {
+    const el = document.getElementById(`hand-${idx}-palm-${a}`);
+    if (el) el.textContent = (hand[`palm_${a}`] || 0).toFixed(2);
   });
 }
 
@@ -456,245 +441,150 @@ function onFrame(frame) {
   const fps = (fpsBuffer.length / 2).toFixed(1);
 
   fpsDisplay.textContent = `${fps} fps`;
-  latencyDisplay.textContent = `${frame.latency_ms.toFixed(1)} ms`;
+  latDisplay.textContent  = `${frame.latency_ms.toFixed(0)} ms`;
 
-  document.getElementById('stat-frames').textContent = frameCount;
-  document.getElementById('stat-latency').textContent = `${frame.latency_ms.toFixed(0)} ms`;
-  document.getElementById('stat-fps').textContent = fps;
+  ['stat-frames','stat-frames2'].forEach(id => { const e = document.getElementById(id); if(e) e.textContent = frameCount; });
+  ['stat-fps','stat-fps2'].forEach(id => { const e = document.getElementById(id); if(e) e.textContent = fps; });
+  ['stat-latency','stat-latency2'].forEach(id => { const e = document.getElementById(id); if(e) e.textContent = frame.latency_ms.toFixed(0) + ' ms'; });
 
   const present = frame.hands.filter(h => h.present).length;
-  document.getElementById('stat-hands').textContent = present;
+  ['stat-hands','stat-hands2'].forEach(id => { const e = document.getElementById(id); if(e) e.textContent = present; });
 
   frame.hands.forEach(hand => updateHand(hand));
   updateSynth(frame);
 }
 
-// ─── Ensure hand cards exist ─────────────────────────────────────────────
-function ensureHandCards(numHands) {
-  for (let i = 0; i < numHands; i++) {
-    if (!document.getElementById(`hand-${i}`)) {
-      container.appendChild(createHandCard(i));
-    }
+function ensureHandCards(n) {
+  for (let i = 0; i < n; i++) {
+    if (!document.getElementById(`hand-${i}`)) container.appendChild(createHandCard(i));
   }
 }
 
-// ─── WebSocket ───────────────────────────────────────────────────────────
+// ─── WebSocket ────────────────────────────────────────────────────────────────
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/ws`);
 
   ws.onopen = () => {
-    statusDot.className = 'connected';
+    wsDot.className = 'connected';
     statusText.textContent = 'Connected';
-    // Keepalive ping every 10s
     setInterval(() => { if (ws.readyState === WebSocket.OPEN) ws.send('ping'); }, 10000);
   };
-
-  ws.onmessage = (e) => {
+  ws.onmessage = e => {
     try {
       const frame = JSON.parse(e.data);
       ensureHandCards(frame.hands.length);
       onFrame(frame);
-    } catch (err) {
-      console.warn('Parse error:', err);
-    }
+    } catch(err) { console.warn('Parse error:', err); }
   };
-
   ws.onclose = () => {
-    statusDot.className = 'disconnected';
+    wsDot.className = 'disconnected';
     statusText.textContent = 'Reconnecting...';
     setTimeout(connect, 2000);
   };
-
   ws.onerror = () => {
-    statusDot.className = 'disconnected';
-    statusText.textContent = 'Connection error';
+    wsDot.className = 'disconnected';
+    statusText.textContent = 'Error';
   };
 }
 
-// ─── Boot ─────────────────────────────────────────────────────────────────
 ensureHandCards(2);
 connect();
 
-// ─── Web Audio Synth ──────────────────────────────────────────────────────
-const PENTATONIC_SEMITONES = [0, 3, 5, 7, 10, 12, 15, 17, 19, 22, 24];
-const BASE_FREQ = 220.0; // A3
-
+// ─── Web Audio Synth ──────────────────────────────────────────────────────────
+const PENTATONIC = [0,3,5,7,10,12,15,17,19,22,24];
+const BASE_FREQ  = 220.0;
 const NOTE_NAMES = ['A','A#','B','C','C#','D','D#','E','F','F#','G','G#'];
-const OCTAVE_BASE = 3; // A3
+const GESTURE_WAVE = { open:'sine', fist:'sawtooth', peace:'square', thumbs_up:'triangle', pointing:'sine', none:'sine' };
 
-const GESTURE_WAVE = {
-  open:      'sine',
-  fist:      'sawtooth',
-  peace:     'square',
-  thumbs_up: 'triangle',
-  pointing:  'sine', // muted via gain
-  none:      'sine',
-};
+let audioCtx=null, mainOsc=null, gainNode=null, lfoOsc=null, lfoGain=null, analyser=null;
+let soundEnabled=false, scopeAnimId=null;
 
-function semitoneToHz(n) {
-  return BASE_FREQ * Math.pow(2, n / 12);
+function semHz(n) { return BASE_FREQ * Math.pow(2, n/12); }
+function semName(n) { const m=57+n; return NOTE_NAMES[m%12]+(Math.floor(m/12)-1); }
+function pentatonicFreq(x, shift) {
+  const i = Math.max(0, Math.min(PENTATONIC.length-1, Math.round(x*(PENTATONIC.length-1))));
+  const s = PENTATONIC[i] + shift*12;
+  return { hz: semHz(s), name: semName(s) };
 }
 
-function semitoneToNoteName(n) {
-  const midiNote = 57 + n; // A3 = MIDI 57
-  const name = NOTE_NAMES[midiNote % 12];
-  const octave = Math.floor(midiNote / 12) - 1;
-  return `${name}${octave}`;
-}
-
-function pentatonicFreq(x, octaveShift) {
-  const idx = Math.round(x * (PENTATONIC_SEMITONES.length - 1));
-  const clamped = Math.max(0, Math.min(idx, PENTATONIC_SEMITONES.length - 1));
-  const semitones = PENTATONIC_SEMITONES[clamped] + octaveShift * 12;
-  return { hz: semitoneToHz(semitones), name: semitoneToNoteName(semitones) };
-}
-
-let audioCtx = null;
-let mainOsc = null;
-let gainNode = null;
-let lfoOsc = null;
-let lfoGain = null;
-let analyser = null;
-let soundEnabled = false;
-let scopeAnimId = null;
-
-function buildAudioGraph() {
+function buildAudio() {
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-  analyser = audioCtx.createAnalyser();
-  analyser.fftSize = 1024;
-
-  gainNode = audioCtx.createGain();
-  gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
-
-  lfoOsc = audioCtx.createOscillator();
-  lfoOsc.type = 'sine';
-  lfoOsc.frequency.setValueAtTime(5, audioCtx.currentTime);
-
-  lfoGain = audioCtx.createGain();
-  lfoGain.gain.setValueAtTime(0, audioCtx.currentTime);
-
-  mainOsc = audioCtx.createOscillator();
-  mainOsc.type = 'sine';
-  mainOsc.frequency.setValueAtTime(BASE_FREQ, audioCtx.currentTime);
-
-  lfoOsc.connect(lfoGain);
-  lfoGain.connect(mainOsc.frequency);
-  mainOsc.connect(gainNode);
-  gainNode.connect(analyser);
-  analyser.connect(audioCtx.destination);
-
-  mainOsc.start();
-  lfoOsc.start();
+  analyser = audioCtx.createAnalyser(); analyser.fftSize = 1024;
+  gainNode = audioCtx.createGain(); gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+  lfoOsc   = audioCtx.createOscillator(); lfoOsc.type = 'sine'; lfoOsc.frequency.value = 5;
+  lfoGain  = audioCtx.createGain(); lfoGain.gain.value = 0;
+  mainOsc  = audioCtx.createOscillator(); mainOsc.type = 'sine'; mainOsc.frequency.value = BASE_FREQ;
+  lfoOsc.connect(lfoGain); lfoGain.connect(mainOsc.frequency);
+  mainOsc.connect(gainNode); gainNode.connect(analyser); analyser.connect(audioCtx.destination);
+  mainOsc.start(); lfoOsc.start();
 }
 
 function updateSynth(frame) {
   if (!soundEnabled || !audioCtx) return;
-
-  // Pick the first present hand (prefer Right)
   let hand = null;
-  for (const h of frame.hands) {
-    if (h.present) {
-      if (h.handedness === 'Right') { hand = h; break; }
-      hand = h;
-    }
-  }
-
-  const now = audioCtx.currentTime;
-  const ramp = 0.05; // 50ms smooth ramp
-
+  for (const h of frame.hands) { if (h.present) { if (h.handedness==='Right'){hand=h;break;} hand=h; } }
+  const now = audioCtx.currentTime, ramp = 0.05;
   if (!hand) {
-    gainNode.gain.linearRampToValueAtTime(0, now + ramp);
-    document.getElementById('sound-state').textContent = 'no hand detected';
+    gainNode.gain.linearRampToValueAtTime(0, now+ramp);
+    document.getElementById('sound-state').textContent = 'waiting...';
     return;
   }
-
-  const octaveShift = hand.pinch > 0.7 ? 1 : 0;
-  const { hz, name } = pentatonicFreq(hand.wrist_x, octaveShift);
-
-  // Volume: wrist_y (0=bottom quiet, 1=top loud), mute on pointing
-  const isMuted = hand.discrete_gesture === 'pointing';
-  const volume = isMuted ? 0 : Math.min(0.75, hand.wrist_y * 1.2);
-
-  // Vibrato depth in Hz — openness controls depth (0–30 Hz range)
-  const vibratoDepth = hand.openness * 30;
-
-  // Waveform
-  const waveType = GESTURE_WAVE[hand.discrete_gesture] || 'sine';
-  if (mainOsc.type !== waveType) mainOsc.type = waveType;
-
-  // Apply smooth ramps
-  mainOsc.frequency.linearRampToValueAtTime(hz, now + ramp);
-  gainNode.gain.linearRampToValueAtTime(volume, now + ramp);
-  lfoGain.gain.linearRampToValueAtTime(vibratoDepth, now + ramp);
-
-  // Update sound card UI
-  document.getElementById('sound-note').textContent = isMuted ? 'MUTE' : name;
-  document.getElementById('sound-wave').textContent = isMuted ? '—' : waveType;
-  document.getElementById('sound-state').textContent = isMuted ? 'muted (pointing)' : 'active';
-
-  const volPct = Math.min(100, volume / 0.75 * 100);
-  const vibPct = Math.min(100, vibratoDepth / 30 * 100);
-  document.getElementById('sound-bar-vol').style.width = `${volPct}%`;
-  document.getElementById('sound-val-vol').textContent = volume.toFixed(2);
-  document.getElementById('sound-bar-vib').style.width = `${vibPct}%`;
-  document.getElementById('sound-val-vib').textContent = hand.openness.toFixed(2);
+  const { hz, name } = pentatonicFreq(hand.wrist_x, hand.pinch>0.7?1:0);
+  const muted  = hand.discrete_gesture === 'pointing';
+  const volume = muted ? 0 : Math.min(0.75, hand.wrist_y*1.2);
+  const vibrato = hand.openness * 30;
+  const wave = GESTURE_WAVE[hand.discrete_gesture] || 'sine';
+  if (mainOsc.type !== wave) mainOsc.type = wave;
+  mainOsc.frequency.linearRampToValueAtTime(hz, now+ramp);
+  gainNode.gain.linearRampToValueAtTime(volume, now+ramp);
+  lfoGain.gain.linearRampToValueAtTime(vibrato, now+ramp);
+  document.getElementById('sound-note').textContent = muted ? 'MUTE' : name;
+  document.getElementById('sound-wave').textContent = muted ? '—' : wave;
+  document.getElementById('sound-state').textContent = muted ? 'muted' : 'active';
+  document.getElementById('sound-state').className = muted ? 'badge' : 'badge cyan';
+  document.getElementById('sound-bar-vol').style.width = `${Math.min(100,volume/0.75*100)}%`;
+  document.getElementById('sound-val-vol').textContent  = volume.toFixed(2);
+  document.getElementById('sound-bar-vib').style.width  = `${Math.min(100,vibrato/30*100)}%`;
+  document.getElementById('sound-val-vib').textContent  = hand.openness.toFixed(2);
 }
 
-// ─── Oscilloscope ────────────────────────────────────────────────────────
 function drawScope() {
   scopeAnimId = requestAnimationFrame(drawScope);
-  const canvas = document.getElementById('scope-canvas');
-  if (!canvas || !analyser) return;
-  const ctx = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
-
+  const cv = document.getElementById('scope-canvas');
+  if (!cv || !analyser) return;
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
   const buf = new Float32Array(analyser.fftSize);
   analyser.getFloatTimeDomainData(buf);
-
-  ctx.fillStyle = '#0a0a0a';
-  ctx.fillRect(0, 0, W, H);
-
-  ctx.strokeStyle = '#00d4aa';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
+  ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle = 'rgba(124,90,255,0.75)'; ctx.lineWidth = 1.5; ctx.beginPath();
   const step = W / buf.length;
-  for (let i = 0; i < buf.length; i++) {
-    const x = i * step;
-    const y = (1 - (buf[i] * 0.5 + 0.5)) * H;
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-  }
+  buf.forEach((v,i) => { const y=(1-(v*0.5+0.5))*H; i===0?ctx.moveTo(0,y):ctx.lineTo(i*step,y); });
   ctx.stroke();
 }
 
-// ─── Sound toggle button ─────────────────────────────────────────────────
 document.getElementById('sound-toggle').addEventListener('click', () => {
   if (!soundEnabled) {
-    buildAudioGraph();
-    soundEnabled = true;
-    document.getElementById('sound-toggle').textContent = '♪ SOUND ON';
+    buildAudio(); soundEnabled = true;
+    document.getElementById('sound-toggle').textContent = '♪ Sound on';
     document.getElementById('sound-toggle').classList.add('active');
-    document.getElementById('sound-state').textContent = 'waiting for hand...';
+    document.getElementById('sound-state').textContent = 'waiting...';
+    document.getElementById('sound-state').className = 'badge';
     drawScope();
   } else {
     soundEnabled = false;
-    if (audioCtx) { audioCtx.close(); audioCtx = null; }
-    if (scopeAnimId) { cancelAnimationFrame(scopeAnimId); scopeAnimId = null; }
-    mainOsc = gainNode = lfoOsc = lfoGain = analyser = null;
-    document.getElementById('sound-toggle').textContent = '♪ SOUND OFF';
+    if (audioCtx) { audioCtx.close(); audioCtx=null; }
+    if (scopeAnimId) { cancelAnimationFrame(scopeAnimId); scopeAnimId=null; }
+    mainOsc=gainNode=lfoOsc=lfoGain=analyser=null;
+    document.getElementById('sound-toggle').textContent = '♪ Sound off';
     document.getElementById('sound-toggle').classList.remove('active');
-    document.getElementById('sound-state').textContent = 'off — click ♪ SOUND OFF to enable';
+    document.getElementById('sound-state').textContent = 'off';
+    document.getElementById('sound-state').className = 'badge';
     document.getElementById('sound-note').textContent = '—';
     document.getElementById('sound-wave').textContent = '—';
-
-    // Clear scope
-    const canvas = document.getElementById('scope-canvas');
-    if (canvas) {
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#0a0a0a';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
+    const cv = document.getElementById('scope-canvas');
+    if (cv) { const c=cv.getContext('2d'); c.fillStyle='rgba(0,0,0,0.5)'; c.fillRect(0,0,cv.width,cv.height); }
   }
 });
 </script>
